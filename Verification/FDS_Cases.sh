@@ -180,6 +180,7 @@ $QFDS -d Fires box_burn_away4.fds
 $QFDS -d Fires box_burn_away5.fds
 $QFDS -d Fires box_burn_away6.fds
 $QFDS -d Fires box_burn_away7.fds
+$QFDS -d Fires box_burn_away8.fds
 $QFDS -d Fires box_burn_away_2D.fds
 $QFDS -d Fires box_burn_away_2D_residue.fds
 $QFDS -d Fires box_burn_away1_pyro3d_vs_pyro1d.fds
@@ -717,6 +718,11 @@ $QFDS -d Turbulence yplus_32.fds
 $QFDS -d Turbulence ribbed_channel_20.fds
 $QFDS -d Turbulence ribbed_channel_40.fds
 $QFDS -d Turbulence ribbed_channel_80.fds
+$QFDS -d Turbulence ribbed_channel_160.fds
+$QFDS -d Turbulence ribbed_channel_geom_20.fds
+$QFDS -d Turbulence ribbed_channel_geom_40.fds
+$QFDS -d Turbulence ribbed_channel_geom_80.fds
+$QFDS -d Turbulence ribbed_channel_geom_160.fds
 $QFDS -d Turbulence sem_flat_leddy_p2.fds
 $QFDS -d Turbulence sem_par_leddy_p2.fds
 $QFDS -d Turbulence sem_atm_leddy_p2.fds

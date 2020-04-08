@@ -72,6 +72,7 @@ N_ORIENTATION_VECTOR = 0
 ALLOCATE(ORIENTATION_VECTOR(3,10))
 
 ! Set humidity data
+
 CALL CALC_H2O_HV
 
 ! Open the input file
@@ -647,6 +648,7 @@ ALLOCATE(EVACUATION_SKIP(NMESHES),STAT=IZERO) ; CALL ChkMemErr('READ','EVACUATIO
 EVACUATION_SKIP = .FALSE.
 ALLOCATE(EVACUATION_Z_OFFSET(NMESHES),STAT=IZERO) ; CALL ChkMemErr('READ','EVACUATION_Z_OFFSET',IZERO)
 EVACUATION_Z_OFFSET = 1.0_EB
+ALLOCATE(SEALED_MESH(NMESHES),STAT=IZERO) ; CALL ChkMemErr('READ','SEALED_MESH',IZERO) ; SEALED_MESH = .TRUE.
 
 ! Read in the Mesh lines from Input file
 
@@ -1771,11 +1773,11 @@ END SUBROUTINE READ_TIME
 
 SUBROUTINE READ_MOVE
 
-REAL(EB) :: DX,DY,DZ,X0,Y0,Z0,AXIS(3),ROTATION_ANGLE,T34(12)
+REAL(EB) :: SCALE,SCALEX,SCALEY,SCALEZ,DX,DY,DZ,X0,Y0,Z0,AXIS(3),ROTATION_ANGLE,T34(12)
 INTEGER :: N
 CHARACTER(LABEL_LENGTH) :: ID
 TYPE(MOVEMENT_TYPE), POINTER :: MV
-NAMELIST /MOVE/ AXIS,DX,DY,DZ,FYI,ID,ROTATION_ANGLE,X0,Y0,Z0,T34
+NAMELIST /MOVE/ AXIS,SCALE,SCALEX,SCALEY,SCALEZ,DX,DY,DZ,FYI,ID,ROTATION_ANGLE,X0,Y0,Z0,T34
 
 N_MOVE = 0
 REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
@@ -1799,6 +1801,10 @@ READ_MOVE_LOOP: DO N=1,N_MOVE
    ROTATION_ANGLE   = 0._EB
    AXIS    = (/0._EB,0._EB,1._EB/)
    ID      = 'null'
+   SCALE   = 1._EB
+   SCALEX  = 1._EB
+   SCALEY  = 1._EB
+   SCALEZ  = 1._EB
    DX      = 0._EB
    DY      = 0._EB
    DZ      = 0._EB
@@ -1818,6 +1824,10 @@ READ_MOVE_LOOP: DO N=1,N_MOVE
    MV%X0 = X0
    MV%Y0 = Y0
    MV%Z0 = Z0
+   MV%SCALE  = SCALE
+   MV%SCALEX = SCALEX
+   MV%SCALEY = SCALEY
+   MV%SCALEZ = SCALEZ
    MV%DX = DX
    MV%DY = DY
    MV%DZ = DZ
@@ -2110,6 +2120,12 @@ REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
 
 TMPA  = TMPA + TMPM
 TMPA4 = TMPA**4
+
+! Establish starting values for min/max temperature and density
+
+TMPMIN = MAX(1._EB , MIN(TMPA,TMPM)-10._EB)
+TMPMAX = 3000._EB
+RHOMAX = 0._EB
 
 ! Miscellaneous
 
@@ -2472,11 +2488,9 @@ IF (ANY(MEAN_FORCING)) THEN
    ENDDO
 ENDIF
 
-! Min and Max values of temperature
+! Min value of temperature
 
-TMPMIN = MAX(1._EB , MIN(TMPA,TMPM)-10._EB)
 IF (LAPSE_RATE < 0._EB) TMPMIN = MIN(TMPMIN,TMPA+LAPSE_RATE*(ZF_MAX-GROUND_LEVEL))
-TMPMAX = 3000._EB
 
 END SUBROUTINE READ_WIND
 
@@ -6651,9 +6665,10 @@ REAL(EB) :: TAU_Q,TAU_V,TAU_T,TAU_MF(MAX_SPECIES),HRRPUA,MLRPUA,TEXTURE_WIDTH,TE
             DRAG_COEFFICIENT,MINIMUM_BURNOUT_TIME
 EQUIVALENCE(TAU_EXTERNAL_FLUX,TAU_EF)
 INTEGER :: NPPC,N,IOS,NL,NN,NNN,N_LIST,N_LIST2,INDEX_LIST(MAX_MATERIALS_TOTAL),LEAK_PATH(2),DUCT_PATH(2),RGB(3),NR,IL
-INTEGER ::  N_LAYER_CELLS_MAX(MAX_LAYERS)
+INTEGER ::  N_LAYER_CELLS_MAX(MAX_LAYERS),VEG_LSET_FUEL_INDEX
 REAL(EB) :: VEG_LSET_IGNITE_TIME,VEG_LSET_QCON,VEG_LSET_ROS_HEAD,VEG_LSET_ROS_FLANK,VEG_LSET_ROS_BACK, &
-            VEG_LSET_WIND_EXP,VEG_LSET_BETA,VEG_LSET_HT,VEG_LSET_SIGMA,VEG_LSET_ROS
+            VEG_LSET_WIND_EXP,VEG_LSET_BETA,VEG_LSET_HT,VEG_LSET_SIGMA,VEG_LSET_ROS, &
+            VEG_LSET_M1,VEG_LSET_M10,VEG_LSET_M100,VEG_LSET_MLW,VEG_LSET_MLH
 LOGICAL :: DEFAULT,EVAC_DEFAULT,VEG_LSET_COUPLED,VEG_LSET_SPREAD,VEG_LSET_ELLIPSE,VEG_LSET_TAN2,TGA_ANALYSIS,COMPUTE_EMISSIVITY,&
            COMPUTE_EMISSIVITY_BACK,HT3D
 
@@ -6674,8 +6689,9 @@ NAMELIST /SURF/ ADIABATIC,BACKING,BURN_AWAY,CELL_SIZE_FACTOR,C_FORCED_CONSTANT,C
                 TAU_EF,TAU_MF,TAU_PART,TAU_Q,TAU_T,TAU_V,TEXTURE_HEIGHT,TEXTURE_MAP,TEXTURE_WIDTH,&
                 TGA_ANALYSIS,TGA_FINAL_TEMPERATURE,TGA_HEATING_RATE,THICKNESS,&
                 TMP_BACK,TMP_FRONT,TMP_INNER,TRANSPARENCY,&
-                VEG_LSET_BETA,VEG_LSET_COUPLED,VEG_LSET_ELLIPSE,VEG_LSET_HT,VEG_LSET_IGNITE_TIME,VEG_LSET_QCON,&
-                VEG_LSET_ROS,VEG_LSET_ROS_BACK,VEG_LSET_ROS_FLANK,VEG_LSET_ROS_HEAD,VEG_LSET_SPREAD,VEG_LSET_SIGMA,&
+                VEG_LSET_BETA,VEG_LSET_COUPLED,VEG_LSET_ELLIPSE,VEG_LSET_FUEL_INDEX,VEG_LSET_HT,VEG_LSET_IGNITE_TIME,&
+                VEG_LSET_M1,VEG_LSET_M10,VEG_LSET_M100,VEG_LSET_MLW,VEG_LSET_MLH,VEG_LSET_QCON,&
+                VEG_LSET_ROS,VEG_LSET_ROS_BACK,VEG_LSET_ROS_FLANK,VEG_LSET_ROS_HEAD,VEG_LSET_SIGMA,&
                 VEG_LSET_TAN2,VEG_LSET_WIND_EXP,&
                 VEL,VEL_BULK,VEL_GRAD,VEL_T,VOLUME_FLOW,WIDTH,XYZ,Z0,&
                 EXTERNAL_FLUX_RAMP,TAU_EXTERNAL_FLUX,VOLUME_FLUX ! Backwards compatability??
@@ -6885,7 +6901,9 @@ READ_SURF_LOOP: DO N=0,N_SURF
 
    ! Level set vegetation fire spread specific
 
-   IF (VEG_LSET_IGNITE_TIME > -1._EB) VEG_LSET_SPREAD = .TRUE.
+   VEG_LSET_SPREAD = .FALSE.
+   IF (VEG_LSET_IGNITE_TIME > -1._EB .OR. VEG_LSET_FUEL_INDEX>0 .OR. &
+       VEG_LSET_ROS>0._EB .OR. VEG_LSET_ROS_HEAD>0._EB) VEG_LSET_SPREAD = .TRUE.
    IF (VEG_LSET_SPREAD) VEG_LEVEL_SET = .TRUE.
    IF (.NOT.VEG_LSET_COUPLED) THEN
       VEG_LEVEL_SET_COUPLED = .FALSE.
@@ -6905,6 +6923,12 @@ READ_SURF_LOOP: DO N=0,N_SURF
    SF%VEG_LSET_TAN2         = VEG_LSET_TAN2
    SF%VEG_LSET_IGNITE_T     = VEG_LSET_IGNITE_TIME
    SF%VEG_LSET_QCON         =-VEG_LSET_QCON*1000._EB ! convert from kW/m^2 to W/m^2
+   SF%VEG_LSET_M1           = VEG_LSET_M1
+   SF%VEG_LSET_M10          = VEG_LSET_M10
+   SF%VEG_LSET_M100         = VEG_LSET_M100
+   SF%VEG_LSET_MLW          = VEG_LSET_MLW
+   SF%VEG_LSET_MLH          = VEG_LSET_MLH
+   SF%VEG_LSET_FUEL_INDEX   = VEG_LSET_FUEL_INDEX
 
    ! Minimum time required to consume all the fuel
 
@@ -7650,7 +7674,6 @@ Z0                      = 10._EB
 
 VEG_LSET_COUPLED        = .TRUE.
 VEG_LSET_IGNITE_TIME    = -1._EB
-VEG_LSET_SPREAD         = .FALSE.
 VEG_LSET_ROS            = 0.0_EB
 VEG_LSET_ROS_HEAD       = 0.0_EB
 VEG_LSET_ROS_FLANK      = 0.0_EB
@@ -7662,6 +7685,12 @@ VEG_LSET_HT             = 1.0_EB
 VEG_LSET_BETA           = 0.01_EB
 VEG_LSET_SIGMA          = 5000.0_EB
 VEG_LSET_QCON           = 0.0_EB
+VEG_LSET_M1             = 0.03_EB
+VEG_LSET_M10            = 0.04_EB
+VEG_LSET_M100           = 0.05_EB
+VEG_LSET_MLW            = 0.70_EB
+VEG_LSET_MLH            = 0.70_EB
+VEG_LSET_FUEL_INDEX     = 0
 
 END SUBROUTINE SET_SURF_DEFAULTS
 
@@ -7889,19 +7918,12 @@ PROCESS_SURF_LOOP: DO N=0,N_SURF
    ! Set predefined HRRPUA
 
    BURNING_IF: IF (BURNING .AND. .NOT.ALL(EVACUATION_ONLY)) THEN
-      IF (SF%HRRPUA>0._EB) THEN
-         RN => REACTION(1)
-         SF%MASS_FLUX(RN%FUEL_SMIX_INDEX) = SF%HRRPUA/RN%HOC_COMPLETE
-      ENDIF
-      IF (SF%MLRPUA>0._EB) THEN
-         RN => REACTION(1)
-         SF%MASS_FLUX(RN%FUEL_SMIX_INDEX) = SF%MLRPUA
-      ENDIF
-      I_FUEL = REACTION(1)%FUEL_SMIX_INDEX
-      IF (SF%N_LAYERS > 0 .AND. SF%THERMALLY_THICK) THEN
-         SF%ADJUST_BURN_RATE(I_FUEL) = MATERIAL(SF%MATL_INDEX(1))%ADJUST_BURN_RATE(I_FUEL,1)
-         SF%MASS_FLUX(I_FUEL) = SF%MASS_FLUX(I_FUEL)/SF%ADJUST_BURN_RATE(I_FUEL) ! This is the true burning rate of the fuel.
-      ENDIF
+      RN => REACTION(1)
+      I_FUEL = RN%FUEL_SMIX_INDEX
+      IF (SF%N_LAYERS > 0 .AND. SF%THERMALLY_THICK) SF%ADJUST_BURN_RATE(I_FUEL) = &
+                            MATERIAL(SF%MATL_INDEX(1))%ADJUST_BURN_RATE(I_FUEL,1)
+      IF (SF%HRRPUA>0._EB) SF%MASS_FLUX(I_FUEL) = SF%HRRPUA/RN%HOC_COMPLETE/SF%ADJUST_BURN_RATE(I_FUEL)
+      IF (SF%MLRPUA>0._EB) SF%MASS_FLUX(I_FUEL) = SF%MLRPUA
       SF%TAU(I_FUEL)        = SF%TAU(TIME_HEAT)
       SF%RAMP_MF(I_FUEL)    = SF%RAMP_Q
       SF%RAMP_INDEX(I_FUEL) = SF%RAMP_INDEX(TIME_HEAT)
@@ -8831,6 +8853,7 @@ SUBROUTINE READ_OBST
 USE GEOMETRY_FUNCTIONS, ONLY: BLOCK_CELL
 USE COMPLEX_GEOMETRY, ONLY: INTERSECT_CONE_AABB,INTERSECT_CYLINDER_AABB,INTERSECT_SPHERE_AABB,INTERSECT_OBB_AABB,ROTATION_MATRIX
 USE MATH_FUNCTIONS, ONLY: GET_RAMP_INDEX
+USE MISC_FUNCTIONS, ONLY: PROCESS_MESH_NEIGHBORHOOD
 TYPE(OBSTRUCTION_TYPE), POINTER :: OB2=>NULL(),OBT=>NULL()
 TYPE(MULTIPLIER_TYPE), POINTER :: MR=>NULL()
 TYPE(OBSTRUCTION_TYPE), DIMENSION(:), ALLOCATABLE, TARGET :: TEMP_OBSTRUCTION
@@ -8838,7 +8861,7 @@ INTEGER :: NM,NOM,N_OBST_O,IC,N,NN,NNN,NNNN,NR,N_NEW_OBST,RGB(3),N_OBST_DIM,II,J
 CHARACTER(LABEL_LENGTH) :: ID,DEVC_ID,PROP_ID,SHAPE,SURF_ID,SURF_IDS(3),SURF_ID6(6),CTRL_ID,MULT_ID,MATL_ID,RAMP_Q
 CHARACTER(60) :: MESH_ID
 CHARACTER(25) :: COLOR
-LOGICAL :: EVACUATION_OBST,OVERLAY,PROCESS_OBSTS,IS_INTERSECT,PYRO3D_MASS_TRANSPORT
+LOGICAL :: EVACUATION_OBST,OVERLAY,IS_INTERSECT,PYRO3D_MASS_TRANSPORT
 REAL(EB) :: TRANSPARENCY,XB1,XB2,XB3,XB4,XB5,XB6,BULK_DENSITY,VOL_ADJUSTED,VOL_SPECIFIED,UNDIVIDED_INPUT_AREA(3),&
             INTERNAL_HEAT_SOURCE,HEIGHT,RADIUS,XYZ(3),ORIENTATION(3),AABB(6),ROTMAT(3,3),THETA,LENGTH,WIDTH,SHAPE_AREA(3)
 LOGICAL :: EMBEDDED,THICKEN,THICKEN_LOC,PERMIT_HOLE,ALLOW_VENT,EVACUATION,REMOVABLE,BNDF_FACE(-3:3),BNDF_OBST,OUTLINE,NOTERRAIN,&
@@ -8855,13 +8878,7 @@ MESH_LOOP: DO NM=1,NMESHES
 
    M => MESHES(NM)
 
-   PROCESS_OBSTS = .FALSE.
-   DO N=1,M%N_NEIGHBORING_MESHES
-      IF (MYID==PROCESS(M%NEIGHBORING_MESH(N))) PROCESS_OBSTS = .TRUE.
-   ENDDO
-   IF (MYID==PROCESS(NM) .OR. MYID==EVAC_PROCESS) PROCESS_OBSTS = .TRUE.
-
-   IF (.NOT.PROCESS_OBSTS) CYCLE MESH_LOOP
+   IF (.NOT.PROCESS_MESH_NEIGHBORHOOD(NM)) CYCLE MESH_LOOP
 
    CALL POINT_TO_MESH(NM)
 
@@ -9588,13 +9605,7 @@ MESH_LOOP_2: DO NM=1,NMESHES
 
    M => MESHES(NM)
 
-   PROCESS_OBSTS = .FALSE.
-   DO N=1,M%N_NEIGHBORING_MESHES
-      IF (MYID==PROCESS(M%NEIGHBORING_MESH(N))) PROCESS_OBSTS = .TRUE.
-   ENDDO
-   IF (MYID==PROCESS(NM) .OR. MYID==EVAC_PROCESS) PROCESS_OBSTS = .TRUE.
-
-   IF (.NOT.PROCESS_OBSTS) CYCLE MESH_LOOP_2
+   IF (.NOT.PROCESS_MESH_NEIGHBORHOOD(NM)) CYCLE MESH_LOOP_2
 
    CALL POINT_TO_MESH(NM)
 
@@ -9657,13 +9668,7 @@ MESH_LOOP_3: DO NM=1,NMESHES
 
    M => MESHES(NM)
 
-   PROCESS_OBSTS = .FALSE.
-   DO N=1,M%N_NEIGHBORING_MESHES
-      IF (MYID==PROCESS(M%NEIGHBORING_MESH(N))) PROCESS_OBSTS = .TRUE.
-   ENDDO
-   IF (MYID==PROCESS(NM) .OR. MYID==EVAC_PROCESS) PROCESS_OBSTS = .TRUE.
-
-   IF (.NOT.PROCESS_OBSTS) CYCLE MESH_LOOP_3
+   IF (.NOT.PROCESS_MESH_NEIGHBORHOOD(NM)) CYCLE MESH_LOOP_3
 
    CALL POINT_TO_MESH(NM)
 
@@ -10452,243 +10457,186 @@ USE GEOMETRY_FUNCTIONS, ONLY : BLOCK_CELL,CIRCLE_CELL_INTERSECTION_AREA
 USE DEVICE_VARIABLES, ONLY : DEVICE
 USE CONTROL_VARIABLES, ONLY : CONTROL
 USE MATH_FUNCTIONS, ONLY: GET_RAMP_INDEX
+USE MISC_FUNCTIONS, ONLY: PROCESS_MESH_NEIGHBORHOOD
 
-INTEGER :: N,NN,NM,NNN,N_VENT_O,IOR,I1,I2,J1,J2,K1,K2,RGB(3),N_EDDY,N_VENT_NEW,II,JJ,KK,OBST_INDEX
-REAL(EB) :: SPREAD_RATE,TRANSPARENCY,XYZ(3),TMP_EXTERIOR,DYNAMIC_PRESSURE,XB1,XB2,XB3,XB4,XB5,XB6, &
+INTEGER :: N,N_TOTAL,N_EXPLICIT,NM,NNN,IOR,I1,I2,J1,J2,K1,K2,RGB(3),N_EDDY,II,JJ,KK,OBST_INDEX,N_IMPLICIT_VENTS,I_MODE
+REAL(EB) :: SPREAD_RATE,TRANSPARENCY,XYZ(3),TMP_EXTERIOR,DYNAMIC_PRESSURE,XB_USER(6),XB_MESH(6), &
             REYNOLDS_STRESS(3,3),L_EDDY,VEL_RMS,L_EDDY_IJ(3,3),UVW(3),RADIUS
 CHARACTER(LABEL_LENGTH) :: ID,DEVC_ID,CTRL_ID,SURF_ID,PRESSURE_RAMP,TMP_EXTERIOR_RAMP,MULT_ID,OBST_ID,SLCF_ID
 CHARACTER(60) :: MESH_ID
 CHARACTER(25) :: COLOR
 TYPE(MULTIPLIER_TYPE), POINTER :: MR
-LOGICAL :: REJECT_VENT,EVACUATION,OUTLINE,EVACUATION_VENT,WIND,GEOM
+LOGICAL :: REJECT_VENT,EVACUATION,OUTLINE,WIND,GEOM
+TYPE IMPLICIT_VENT_TYPE
+   REAL(EB) :: XB(6)
+   INTEGER, DIMENSION(3) :: RGB=-1
+   CHARACTER(LABEL_LENGTH) :: MB='null',SURF_ID='null',ID='null',MESH_ID='null'
+   LOGICAL :: EVACUATION=.FALSE.
+END TYPE
+TYPE(IMPLICIT_VENT_TYPE), ALLOCATABLE, DIMENSION(:) :: IMPLICIT_VENT
 NAMELIST /VENT/ COLOR,CTRL_ID,DB,DEVC_ID,DYNAMIC_PRESSURE,EVACUATION,FYI,GEOM,ID,IOR,L_EDDY,L_EDDY_IJ, &
                 MB,MESH_ID,MULT_ID,N_EDDY,OBST_ID,OUTLINE,PBX,PBY,PBZ,PRESSURE_RAMP,RADIUS,REYNOLDS_STRESS, &
                 RGB,SLCF_ID,SPREAD_RATE,SURF_ID,TEXTURE_ORIGIN,TMP_EXTERIOR,TMP_EXTERIOR_RAMP,TRANSPARENCY, &
                 UVW,VEL_RMS,WIND,XB,XYZ
 
+! For a given MPI process, only read and process VENTs in the MESHes it controls or the MESH's immediate neighbors
+
 MESH_LOOP_1: DO NM=1,NMESHES
 
-   M=>MESHES(NM)
+   IF (.NOT.PROCESS_MESH_NEIGHBORHOOD(NM)) CYCLE MESH_LOOP_1
+
    CALL POINT_TO_MESH(NM)
 
+   ! Special circumstances where VENTs are implied, not explicitly included in input file
+
+   CALL DEFINE_IMPLICIT_VENTS
+
+   ! Read the input file twice, first to count the VENTs, then to store the info in MESHES(NM)%VENTS(N)
+
+   COUNT_OR_READ_LOOP: DO I_MODE=1,2
+
+   ! Allocate the derived type variable VENTS that holds all vent info
+
+   IF (I_MODE==2) ALLOCATE(MESHES(NM)%VENTS(N_VENT),STAT=IZERO) ; CALL ChkMemErr('READ','VENTS',IZERO) ; VENTS=>MESHES(NM)%VENTS
+
+   ! Rewind the input file and read all possible vents
+
+   N_VENT       = 0  ! Number of VENTs stored by each mesh
+   N_TOTAL      = 0  ! Counter of all VENTs, both explicit and implicit
+   N_EXPLICIT   = 0  ! Counter of explicitly declared VENTs
+   N_VENT_TOTAL = 0  ! Purely for Smokeview drawing of VENTs
+
    REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
-   N_VENT = 0
-   COUNT_VENT_LOOP: DO
-      CALL CHECKREAD('VENT',LU_INPUT,IOS)  ; IF (STOP_STATUS==SETUP_STOP) RETURN
-      IF (IOS==1) EXIT COUNT_VENT_LOOP
-      ID      = 'null'
-      MULT_ID = 'null'
-      SURF_ID = 'null'
-      READ(LU_INPUT,NML=VENT,END=3,ERR=4,IOSTAT=IOS)
-      N_VENT_NEW = 0
-      IF (MULT_ID=='null') THEN
-         N_VENT_NEW = 1
+
+   READ_VENT_LOOP: DO
+
+      CALL SET_VENT_DEFAULTS
+
+      N_TOTAL = N_TOTAL + 1
+
+      ! Read the VENT lines that are explicitly listed in the input file, not the implicit MIRROR VENTs
+
+      IF (N_TOTAL<=N_IMPLICIT_VENTS) THEN
+         XB(1)      = IMPLICIT_VENT(N_TOTAL)%XB(1)
+         XB(2)      = IMPLICIT_VENT(N_TOTAL)%XB(2)
+         XB(3)      = IMPLICIT_VENT(N_TOTAL)%XB(3)
+         XB(4)      = IMPLICIT_VENT(N_TOTAL)%XB(4)
+         XB(5)      = IMPLICIT_VENT(N_TOTAL)%XB(5)
+         XB(6)      = IMPLICIT_VENT(N_TOTAL)%XB(6)
+         RGB(1)     = IMPLICIT_VENT(N_TOTAL)%RGB(1)
+         RGB(2)     = IMPLICIT_VENT(N_TOTAL)%RGB(1)
+         RGB(3)     = IMPLICIT_VENT(N_TOTAL)%RGB(1)
+         MB         = IMPLICIT_VENT(N_TOTAL)%MB
+         SURF_ID    = IMPLICIT_VENT(N_TOTAL)%SURF_ID
+         ID         = IMPLICIT_VENT(N_TOTAL)%ID
+         MESH_ID    = IMPLICIT_VENT(N_TOTAL)%MESH_ID
+         EVACUATION = IMPLICIT_VENT(N_TOTAL)%EVACUATION
       ELSE
-         IF (SURF_ID=='HVAC') THEN
-            WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: Cannot use MULT with an HVAC VENT, VENT ', N_VENT+1,&
-                                         ', line number ',INPUT_FILE_LINE_NUMBER
-            CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
-         ENDIF
-         DO N=1,N_MULT
-            MR => MULTIPLIER(N)
-            IF (MULT_ID==MR%ID) N_VENT_NEW = MR%N_COPIES
-         ENDDO
-         IF (N_VENT_NEW==0) THEN
-            WRITE(MESSAGE,'(A,A,A,I0,A,I0)') 'ERROR: MULT line ', TRIM(MULT_ID),' not found on VENT ', N_VENT+1,&
-                                             ', line number ',INPUT_FILE_LINE_NUMBER
+         CALL CHECKREAD('VENT',LU_INPUT,IOS)  ; IF (STOP_STATUS==SETUP_STOP) RETURN
+         IF (IOS==1) EXIT READ_VENT_LOOP
+         READ(LU_INPUT,VENT,END=37,ERR=36,IOSTAT=IOS)    ! Read in info for VENT N
+         N_EXPLICIT = N_EXPLICIT + 1
+      36 IF (IOS>0) THEN
+            WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: Problem with VENT number ',N_EXPLICIT,', line number ',INPUT_FILE_LINE_NUMBER
             CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          ENDIF
       ENDIF
-      IF (SURF_ID=='HVAC' .AND. ID=='null') THEN
-         WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: must specify an ID for an HVAC VENT, VENT ', N_VENT+1,&
+
+      ! Simple error flagging
+
+      IF (SURF_ID=='HVAC' .AND. MULT_ID/='null') THEN
+         WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: Cannot use MULT_ID with an HVAC VENT, VENT ',N_EXPLICIT,&
                                       ', line number ',INPUT_FILE_LINE_NUMBER
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
       ENDIF
-      N_VENT = N_VENT + N_VENT_NEW
-      4 IF (IOS>0) THEN
-         WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: Problem with VENT ',N_VENT+1,', line number ',INPUT_FILE_LINE_NUMBER
+      IF (SURF_ID=='HVAC' .AND. ID=='null') THEN
+         WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: Specify an ID for an HVAC VENT, VENT ',N_EXPLICIT,&
+                                      ', line number ',INPUT_FILE_LINE_NUMBER
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
       ENDIF
-   ENDDO COUNT_VENT_LOOP
-   3 REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
 
-   IF (EVACUATION_ONLY(NM)) CALL DEFINE_EVACUATION_VENTS(NM,1)
-
-   IF (TWO_D)                         N_VENT = N_VENT + 2
-   IF (CYLINDRICAL .AND. M%XS<=TWO_EPSILON_EB) N_VENT = N_VENT + 1
-   IF (EVACUATION_ONLY(NM))           N_VENT = N_VENT + 2
-
-   ALLOCATE(M%VENTS(N_VENT),STAT=IZERO)
-   CALL ChkMemErr('READ','VENTS',IZERO)
-   VENTS=>M%VENTS
-
-   N_VENT_O = N_VENT
-   N        = 0
-
-   REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
-   READ_VENT_LOOP: DO NN=1,N_VENT_O
-
-      IOR     = 0
-      MB      = 'null'
-      DB      = 'null'
-      PBX     = -1.E6_EB
-      PBY     = -1.E6_EB
-      PBZ     = -1.E6_EB
-      SURF_ID = 'null'
-      COLOR   = 'null'
-      MESH_ID = 'null'
-      MULT_ID = 'null'
-      OBST_ID = 'null'
-      ID      = 'null'
-      RGB     =-1
-      TRANSPARENCY = 1._EB
-      DYNAMIC_PRESSURE = 0._EB
-      PRESSURE_RAMP = 'null'
-      XYZ     = -1.E6_EB
-      SPREAD_RATE = -1._EB
-      TMP_EXTERIOR = -1000.
-      TMP_EXTERIOR_RAMP = 'null'
-      TEXTURE_ORIGIN = -999._EB
-      OUTLINE      = .FALSE.
-      DEVC_ID  = 'null'
-      CTRL_ID  = 'null'
-      EVACUATION = .FALSE.
-      N_EDDY=0
-      L_EDDY=0._EB
-      L_EDDY_IJ=0._EB
-      VEL_RMS=0._EB
-      REYNOLDS_STRESS=0._EB
-      UVW = -1.E12_EB
-      RADIUS = -1._EB
-      WIND = .FALSE.
-      GEOM = .FALSE.
-
-      IF (NN==N_VENT_O-2 .AND. CYLINDRICAL .AND. XS<=TWO_EPSILON_EB) MB='XMIN'
-      IF (NN==N_VENT_O-1 .AND. TWO_D)                        MB='YMIN'
-      IF (NN==N_VENT_O   .AND. TWO_D)                        MB='YMAX'
-      IF (NN==N_VENT_O-1 .AND. EVACUATION_ONLY(NM))          MB='ZMIN'
-      IF (NN==N_VENT_O   .AND. EVACUATION_ONLY(NM))          MB='ZMAX'
-
-      IF (MB=='null') THEN
-         EVACUATION_VENT = .FALSE.
-         IF (EVACUATION_ONLY(NM)) CALL DEFINE_EVACUATION_VENTS(NM,2)
-         EVACUATION_VENTS: IF (.NOT. EVACUATION_VENT) THEN
-            CALL CHECKREAD('VENT',LU_INPUT,IOS)  ; IF (STOP_STATUS==SETUP_STOP) RETURN
-            IF (IOS==1) EXIT READ_VENT_LOOP
-            READ(LU_INPUT,VENT,END=37)    ! Read in info for VENT N
-         END IF EVACUATION_VENTS
-      ELSE
-         SURF_ID = 'MIRROR'
-      ENDIF
-
-      IF (MESH_ID/='null' .AND. MESH_ID/=MESH_NAME(NM))  CYCLE READ_VENT_LOOP
+      ! Special cases where VENT is specified with PBX, PBY, PBZ, MB, or DB
 
       IF (PBX>-1.E5_EB .OR. PBY>-1.E5_EB .OR. PBZ>-1.E5_EB) THEN
          IF (MULT_ID/='null') THEN
-            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',NN,' because it uses PBX, PBY or PBZ.'
+            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',N_EXPLICIT,' because it uses PBX, PBY or PBZ.'
             CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          ENDIF
-         XB(1) = XS
-         XB(2) = XF
-         XB(3) = YS
-         XB(4) = YF
-         XB(5) = ZS
-         XB(6) = ZF
+         XB = (/XS,XF,YS,YF,ZS,ZF/)
          IF (PBX>-1.E5_EB) XB(1:2) = PBX
          IF (PBY>-1.E5_EB) XB(3:4) = PBY
          IF (PBZ>-1.E5_EB) XB(5:6) = PBZ
-      ENDIF
-
-      IF (MB/='null') THEN
+      ELSEIF (MB/='null') THEN
          IF (NMESHES>1 .AND. SURF_ID=='PERIODIC') THEN
-            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: Use PBX,PBY,PBZ or XB for VENT',NN,' multi-mesh PERIODIC boundary'
+            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: Use PBX,PBY,PBZ or XB for VENT',N_EXPLICIT,' multi-mesh PERIODIC boundary'
             CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          ENDIF
          IF (MULT_ID/='null') THEN
-            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',NN,' because it uses MB.'
+            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',N_EXPLICIT,' because it uses MB.'
             CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          ENDIF
-         XB(1) = XS
-         XB(2) = XF
-         XB(3) = YS
-         XB(4) = YF
-         XB(5) = ZS
-         XB(6) = ZF
+         XB = (/XS,XF,YS,YF,ZS,ZF/)
          SELECT CASE (MB)
-            CASE('XMIN')
-                XB(2) = XS
-            CASE('XMAX')
-                XB(1) = XF
-            CASE('YMIN')
-                XB(4) = YS
-            CASE('YMAX')
-                XB(3) = YF
-            CASE('ZMIN')
-                XB(6) = ZS
-            CASE('ZMAX')
-                XB(5) = ZF
+            CASE('XMIN') ; XB(2) = XS
+            CASE('XMAX') ; XB(1) = XF
+            CASE('YMIN') ; XB(4) = YS
+            CASE('YMAX') ; XB(3) = YF
+            CASE('ZMIN') ; XB(6) = ZS
+            CASE('ZMAX') ; XB(5) = ZF
             CASE DEFAULT
-               WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MB specified for VENT',NN,' is not XMIN, XMAX, YMIN, YMAX, ZMIN, or ZMAX'
+               WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MB specified for VENT',N_EXPLICIT,' is not XMIN, XMAX, YMIN, YMAX, ZMIN, or ZMAX'
                CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          END SELECT
-      ENDIF
-
-      IF (DB/='null') THEN
+      ELSEIF (DB/='null') THEN
          IF (MULT_ID/='null') THEN
-            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',NN,' because it uses DB.'
+            WRITE(MESSAGE,'(A,I0,A)') 'ERROR: MULT_ID cannot be applied to VENT',N_EXPLICIT,' because it uses DB.'
             CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          ENDIF
-         XB(1) = XS
-         XB(2) = XF
-         XB(3) = YS
-         XB(4) = YF
-         XB(5) = ZS
-         XB(6) = ZF
+         XB = (/XS,XF,YS,YF,ZS,ZF/)
          SELECT CASE (DB)
-            CASE('XMIN')
-                XB(1:2) = XS_MIN+TWO_EPSILON_EB
-            CASE('XMAX')
-                XB(1:2) = XF_MAX-TWO_EPSILON_EB
-            CASE('YMIN')
-                XB(3:4) = YS_MIN+TWO_EPSILON_EB
-            CASE('YMAX')
-                XB(3:4) = YF_MAX-TWO_EPSILON_EB
-            CASE('ZMIN')
-                XB(5:6) = ZS_MIN+TWO_EPSILON_EB
-            CASE('ZMAX')
-                XB(5:6) = ZF_MAX-TWO_EPSILON_EB
+            CASE('XMIN') ; XB(1:2) = XS_MIN+TWO_EPSILON_EB
+            CASE('XMAX') ; XB(1:2) = XF_MAX-TWO_EPSILON_EB
+            CASE('YMIN') ; XB(3:4) = YS_MIN+TWO_EPSILON_EB
+            CASE('YMAX') ; XB(3:4) = YF_MAX-TWO_EPSILON_EB
+            CASE('ZMIN') ; XB(5:6) = ZS_MIN+TWO_EPSILON_EB
+            CASE('ZMAX') ; XB(5:6) = ZF_MAX-TWO_EPSILON_EB
             CASE DEFAULT
-               WRITE(MESSAGE,'(A,I0,A)') 'ERROR: DB specified for VENT',NN,' is not XMIN, XMAX, YMIN, YMAX, ZMIN, or ZMAX'
+               WRITE(MESSAGE,'(A,I0,A)') 'ERROR: DB specified for VENT',N_EXPLICIT,' is not XMIN, XMAX, YMIN, YMAX, ZMIN, or ZMAX'
                CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
          END SELECT
       ENDIF
 
       ! Check that the vent is properly specified
 
-      IF (ABS(XB(3)-XB(4))<=SPACING(XB(4))  .AND. TWO_D .AND. NN<N_VENT_O-1) THEN
-         IF (ID=='null')WRITE(MESSAGE,'(A,I0,A)')'ERROR: VENT ',NN,      ' cannot be specified on a y boundary in a 2D calculation'
-         IF (ID/='null')WRITE(MESSAGE,'(A,A,A)') 'ERROR: VENT ',TRIM(ID),' cannot be specified on a y boundary in a 2D calculation'
+      IF (ABS(XB(3)-XB(4))<=SPACING(XB(4))  .AND. TWO_D .AND. N_TOTAL>N_IMPLICIT_VENTS) THEN
+         IF (ID=='null')WRITE(MESSAGE,'(A,I0,A)')'ERROR: VENT ',N_EXPLICIT,' cannot be specified on a y boundary in a 2D calc'
+         IF (ID/='null')WRITE(MESSAGE,'(A,A,A)') 'ERROR: VENT ',TRIM(ID),  ' cannot be specified on a y boundary in a 2D calc'
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
       ENDIF
 
       IF (ABS(XB(1)-XB(2))>SPACING(XB(2))  .AND. ABS(XB(3)-XB(4))>SPACING(XB(4))  .AND.ABS(XB(5)-XB(6))>SPACING(XB(6)) ) THEN
-         IF (ID=='null') WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',NN,      ' must be a plane'
+         IF (ID=='null') WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',N_EXPLICIT,' must be a plane'
          IF (ID/='null') WRITE(MESSAGE,'(A,A,A)')  'ERROR: VENT ',TRIM(ID),' must be a plane'
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
       ENDIF
 
+      ! Check if the XB coords are in the proper order
+
       CALL CHECK_XB(XB)
 
-      IF (ALL(EVACUATION_ONLY)) THEN
-         DEVC_ID    = 'null'
-         CTRL_ID    = 'null'
-      END IF
-
-      ! Loop over all possible multiples of the OBST
+      ! Loop over all possible multiples of the VENT and save the user-specified coords, XB_USER
 
       MR => MULTIPLIER(0)
       DO NNN=1,N_MULT
-         IF (MULT_ID==MULTIPLIER(NNN)%ID) MR => MULTIPLIER(NNN)
+         IF (MULT_ID==MULTIPLIER(NNN)%ID) THEN
+            MR => MULTIPLIER(NNN)
+            EXIT
+         ENDIF
+         IF (MULT_ID/='null' .AND. NNN==N_MULT) THEN
+            WRITE(MESSAGE,'(A,A,A,I0,A,I0)') 'ERROR: MULT_ID ', TRIM(MULT_ID),' not found for VENT ',N_EXPLICIT,&
+                                             ', line number ',INPUT_FILE_LINE_NUMBER
+            CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
+         ENDIF
       ENDDO
 
       K_MULT_LOOP: DO KK=MR%K_LOWER,MR%K_UPPER
@@ -10699,83 +10647,71 @@ MESH_LOOP_1: DO NM=1,NMESHES
 
                REJECT_VENT = .FALSE.
 
+               N_VENT_TOTAL = N_VENT_TOTAL + 1  ! Count all possible VENTs for use in Smokeview
+
                IF (.NOT.MR%SEQUENTIAL) THEN
-                  XB1 = XB(1) + MR%DX0 + II*MR%DXB(1)
-                  XB2 = XB(2) + MR%DX0 + II*MR%DXB(2)
-                  XB3 = XB(3) + MR%DY0 + JJ*MR%DXB(3)
-                  XB4 = XB(4) + MR%DY0 + JJ*MR%DXB(4)
-                  XB5 = XB(5) + MR%DZ0 + KK*MR%DXB(5)
-                  XB6 = XB(6) + MR%DZ0 + KK*MR%DXB(6)
+                  XB_USER(1) = XB(1) + MR%DX0 + II*MR%DXB(1)
+                  XB_USER(2) = XB(2) + MR%DX0 + II*MR%DXB(2)
+                  XB_USER(3) = XB(3) + MR%DY0 + JJ*MR%DXB(3)
+                  XB_USER(4) = XB(4) + MR%DY0 + JJ*MR%DXB(4)
+                  XB_USER(5) = XB(5) + MR%DZ0 + KK*MR%DXB(5)
+                  XB_USER(6) = XB(6) + MR%DZ0 + KK*MR%DXB(6)
                ELSE
-                  XB1 = XB(1) + MR%DX0 + II*MR%DXB(1)
-                  XB2 = XB(2) + MR%DX0 + II*MR%DXB(2)
-                  XB3 = XB(3) + MR%DY0 + II*MR%DXB(3)
-                  XB4 = XB(4) + MR%DY0 + II*MR%DXB(4)
-                  XB5 = XB(5) + MR%DZ0 + II*MR%DXB(5)
-                  XB6 = XB(6) + MR%DZ0 + II*MR%DXB(6)
+                  XB_USER(1) = XB(1) + MR%DX0 + II*MR%DXB(1)
+                  XB_USER(2) = XB(2) + MR%DX0 + II*MR%DXB(2)
+                  XB_USER(3) = XB(3) + MR%DY0 + II*MR%DXB(3)
+                  XB_USER(4) = XB(4) + MR%DY0 + II*MR%DXB(4)
+                  XB_USER(5) = XB(5) + MR%DZ0 + II*MR%DXB(5)
+                  XB_USER(6) = XB(6) + MR%DZ0 + II*MR%DXB(6)
                ENDIF
 
-               ! Increase the VENT counter
+               ! Save the VENT coordinates for the given MESH
 
-               N = N + 1
+               XB_MESH(1) = MAX(XB_USER(1),XS)
+               XB_MESH(2) = MIN(XB_USER(2),XF)
+               XB_MESH(3) = MAX(XB_USER(3),YS)
+               XB_MESH(4) = MIN(XB_USER(4),YF)
+               XB_MESH(5) = MAX(XB_USER(5),ZS)
+               XB_MESH(6) = MIN(XB_USER(6),ZF)
 
-               VT=>VENTS(N)
+               I1 = MAX(0,   NINT(GINV(XB_MESH(1)-XS,1,NM)*RDXI   ))
+               I2 = MIN(IBAR,NINT(GINV(XB_MESH(2)-XS,1,NM)*RDXI   ))
+               J1 = MAX(0,   NINT(GINV(XB_MESH(3)-YS,2,NM)*RDETA  ))
+               J2 = MIN(JBAR,NINT(GINV(XB_MESH(4)-YS,2,NM)*RDETA  ))
+               K1 = MAX(0,   NINT(GINV(XB_MESH(5)-ZS,3,NM)*RDZETA ))
+               K2 = MIN(KBAR,NINT(GINV(XB_MESH(6)-ZS,3,NM)*RDZETA ))
 
-               IF (ABS(XB1-XB2)<=SPACING(XB2) ) VT%UNDIVIDED_INPUT_AREA = (XB4-XB3)*(XB6-XB5)
-               IF (ABS(XB3-XB4)<=SPACING(XB4) ) VT%UNDIVIDED_INPUT_AREA = (XB2-XB1)*(XB6-XB5)
-               IF (ABS(XB5-XB6)<=SPACING(XB6) ) VT%UNDIVIDED_INPUT_AREA = (XB2-XB1)*(XB4-XB3)
-               IF (RADIUS>0._EB)                VT%UNDIVIDED_INPUT_AREA = PI*RADIUS**2
+               ! Decide if the VENT is inside or at the boundary of the current MESH
 
-               VT%X1_ORIG = XB1
-               VT%X2_ORIG = XB2
-               VT%Y1_ORIG = XB3
-               VT%Y2_ORIG = XB4
-               VT%Z1_ORIG = XB5
-               VT%Z2_ORIG = XB6
-
-               XB1 = MAX(XB1,XS)
-               XB2 = MIN(XB2,XF)
-               XB3 = MAX(XB3,YS)
-               XB4 = MIN(XB4,YF)
-               XB5 = MAX(XB5,ZS)
-               XB6 = MIN(XB6,ZF)
-
-               IF ((XB1-XF)>SPACING(XF) .OR. (XS-XB2)>SPACING(XS) .OR. &
-                   (XB3-YF)>SPACING(YF) .OR. (YS-XB4)>SPACING(YS) .OR. &
-                   (XB5-ZF)>SPACING(ZF) .OR. (ZS-XB6)>SPACING(ZS)) REJECT_VENT = .TRUE.
-
-               VT%I1 = MAX(0,   NINT(GINV(XB1-XS,1,NM)*RDXI   ))
-               VT%I2 = MIN(IBAR,NINT(GINV(XB2-XS,1,NM)*RDXI   ))
-               VT%J1 = MAX(0,   NINT(GINV(XB3-YS,2,NM)*RDETA  ))
-               VT%J2 = MIN(JBAR,NINT(GINV(XB4-YS,2,NM)*RDETA  ))
-               VT%K1 = MAX(0,   NINT(GINV(XB5-ZS,3,NM)*RDZETA ))
-               VT%K2 = MIN(KBAR,NINT(GINV(XB6-ZS,3,NM)*RDZETA ))
+               IF ((XB_MESH(1)-XF)>SPACING(XF) .OR. (XS-XB_MESH(2))>SPACING(XS) .OR. &
+                   (XB_MESH(3)-YF)>SPACING(YF) .OR. (YS-XB_MESH(4))>SPACING(YS) .OR. &
+                   (XB_MESH(5)-ZF)>SPACING(ZF) .OR. (ZS-XB_MESH(6))>SPACING(ZS)) REJECT_VENT = .TRUE.
 
                ! Thicken evacuation mesh vents in the z direction
 
-               IF (EVACUATION_ONLY(NM) .AND. EVACUATION .AND. VT%K1==VT%K2 .AND. .NOT.REJECT_VENT) THEN
-                  VT%K1 = INT(GINV(.5_EB*(XB5+XB6)-ZS,3,NM)*RDZETA)
-                  VT%K2 = KBAR
-                  XB5 = ZS
-                  XB6 = ZF
-                  IF (ABS(XB1-XB2)>SPACING(XB2)  .AND. ABS(XB3-XB4)>SPACING(XB4) ) THEN
-                     IF (ID=='null') WRITE(MESSAGE,'(A,I0,A)') 'ERROR: Evacuation VENT ',NN,      ' must be a vertical plane'
+               IF (EVACUATION_ONLY(NM) .AND. EVACUATION .AND. K1==K2 .AND. .NOT.REJECT_VENT) THEN
+                  K1 = INT(GINV(.5_EB*(XB_MESH(5)+XB_MESH(6))-ZS,3,NM)*RDZETA)
+                  K2 = KBAR
+                  XB_MESH(5) = ZS
+                  XB_MESH(6) = ZF
+                  IF (ABS(XB_MESH(1)-XB_MESH(2))>SPACING(XB_MESH(2)) .AND. ABS(XB_MESH(3)-XB_MESH(4))>SPACING(XB_MESH(4))) THEN
+                     IF (ID=='null') WRITE(MESSAGE,'(A,I0,A)') 'ERROR: Evacuation VENT ',N_TOTAL, ' must be a vertical plane'
                      IF (ID/='null') WRITE(MESSAGE,'(A,A,A)')  'ERROR: Evacuation VENT ',TRIM(ID),' must be a vertical plane'
                      CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                   ENDIF
                ENDIF
 
-               IF (ABS(XB1-XB2)<=SPACING(XB2) ) THEN
-                  IF (VT%J1==VT%J2 .OR. VT%K1==VT%K2) REJECT_VENT=.TRUE.
-                  IF (VT%I1>IBAR .OR. VT%I2<0)        REJECT_VENT=.TRUE.
+               IF (ABS(XB_MESH(1)-XB_MESH(2))<=SPACING(XB_MESH(2))) THEN
+                  IF (J1==J2  .OR. K1==K2) REJECT_VENT=.TRUE.
+                  IF (I1>IBAR .OR. I2<0)   REJECT_VENT=.TRUE.
                ENDIF
-               IF (ABS(XB3-XB4)<=SPACING(XB4) ) THEN
-                  IF (VT%I1==VT%I2 .OR. VT%K1==VT%K2) REJECT_VENT=.TRUE.
-                  IF (VT%J1>JBAR .OR. VT%J2<0)        REJECT_VENT=.TRUE.
+               IF (ABS(XB_MESH(3)-XB_MESH(4))<=SPACING(XB_MESH(4))) THEN
+                  IF (I1==I2  .OR. K1==K2) REJECT_VENT=.TRUE.
+                  IF (J1>JBAR .OR. J2<0)   REJECT_VENT=.TRUE.
                ENDIF
-               IF (ABS(XB5-XB6)<=SPACING(XB6) ) THEN
-                  IF (VT%I1==VT%I2 .OR. VT%J1==VT%J2) REJECT_VENT=.TRUE.
-                  IF (VT%K1>KBAR .OR. VT%K2<0)        REJECT_VENT=.TRUE.
+               IF (ABS(XB_MESH(5)-XB_MESH(6))<=SPACING(XB_MESH(6))) THEN
+                  IF (I1==I2  .OR. J1==J2) REJECT_VENT=.TRUE.
+                  IF (K1>KBAR .OR. K2<0)   REJECT_VENT=.TRUE.
                ENDIF
 
                ! Evacuation criteria
@@ -10783,37 +10719,66 @@ MESH_LOOP_1: DO NM=1,NMESHES
                IF (.NOT.EVACUATION .AND. EVACUATION_ONLY(NM)) REJECT_VENT=.TRUE.
                IF (EVACUATION .AND. .NOT.EVACUATION_ONLY(NM)) REJECT_VENT=.TRUE.
 
-               IF (ALL(EVACUATION_ONLY)) THEN
-                  DEVC_ID    = 'null'
-                  CTRL_ID    = 'null'
-               END IF
+               ! Don't use this VENT if it is specified for another MESH
 
-               ! If the VENT is to rejected
+               IF (MESH_ID/='null' .AND. MESH_ID/=MESH_NAME(NM)) REJECT_VENT=.TRUE.
+
+               ! If the VENT is rejected, cycle
 
                IF (REJECT_VENT) THEN
-                  N = N-1
-                  N_VENT = N_VENT-1
                   CYCLE I_MULT_LOOP
+               ELSE
+                  N_VENT = N_VENT + 1
+                  IF (I_MODE==1) CYCLE I_MULT_LOOP
                ENDIF
+
+               ! The VENT is accepted, add an entry to MESHES(NM)%VENTS
+
+               VT=>VENTS(N_VENT)
+
+               ! Set basic VENT coordinates
+
+               VT%I1 = I1
+               VT%I2 = I2
+               VT%J1 = J1
+               VT%J2 = J2
+               VT%K1 = K1
+               VT%K2 = K2
+
+               VT%X1 = XB_MESH(1)
+               VT%X2 = XB_MESH(2)
+               VT%Y1 = XB_MESH(3)
+               VT%Y2 = XB_MESH(4)
+               VT%Z1 = XB_MESH(5)
+               VT%Z2 = XB_MESH(6)
+
+               VT%X1_ORIG = XB_USER(1)
+               VT%X2_ORIG = XB_USER(2)
+               VT%Y1_ORIG = XB_USER(3)
+               VT%Y2_ORIG = XB_USER(4)
+               VT%Z1_ORIG = XB_USER(5)
+               VT%Z2_ORIG = XB_USER(6)
 
                ! Vent area
 
-               VT%X1 = XB1
-               VT%X2 = XB2
-               VT%Y1 = XB3
-               VT%Y2 = XB4
-               VT%Z1 = XB5
-               VT%Z2 = XB6
+               IF (ABS(XB_USER(1)-XB_USER(2))<=SPACING(XB_USER(2))) &
+                  VT%UNDIVIDED_INPUT_AREA = (XB_USER(4)-XB_USER(3))*(XB_USER(6)-XB_USER(5))
+               IF (ABS(XB_USER(3)-XB_USER(4))<=SPACING(XB_USER(4))) &
+                  VT%UNDIVIDED_INPUT_AREA = (XB_USER(2)-XB_USER(1))*(XB_USER(6)-XB_USER(5))
+               IF (ABS(XB_USER(5)-XB_USER(6))<=SPACING(XB_USER(6))) &
+                  VT%UNDIVIDED_INPUT_AREA = (XB_USER(2)-XB_USER(1))*(XB_USER(4)-XB_USER(3))
 
-               IF (ABS(XB1-XB2)<=SPACING(XB2) ) VT%INPUT_AREA = (XB4-XB3)*(XB6-XB5)
-               IF (ABS(XB3-XB4)<=SPACING(XB4) ) VT%INPUT_AREA = (XB2-XB1)*(XB6-XB5)
-               IF (ABS(XB5-XB6)<=SPACING(XB6) ) VT%INPUT_AREA = (XB2-XB1)*(XB4-XB3)
+               IF (RADIUS>0._EB) VT%UNDIVIDED_INPUT_AREA = PI*RADIUS**2
+
+               IF (ABS(VT%X2-VT%X1)<=SPACING(VT%X2) ) VT%INPUT_AREA = (VT%Y2-VT%Y1)*(VT%Z2-VT%Z1)
+               IF (ABS(VT%Y2-VT%Y1)<=SPACING(VT%Y2) ) VT%INPUT_AREA = (VT%X2-VT%X1)*(VT%Z2-VT%Z1)
+               IF (ABS(VT%Z2-VT%Z1)<=SPACING(VT%Z2) ) VT%INPUT_AREA = (VT%X2-VT%X1)*(VT%Y2-VT%Y1)
 
                ! Check the SURF_ID against the list of SURF's
 
                CALL CHECK_SURF_NAME(SURF_ID,EX)
                IF (.NOT.EX) THEN
-                  WRITE(MESSAGE,'(A,A,A,I0,A,I0)') 'ERROR: SURF_ID ',TRIM(SURF_ID),' not found for VENT ',N_VENT,&
+                  WRITE(MESSAGE,'(A,A,A,I0,A,I0)') 'ERROR: SURF_ID ',TRIM(SURF_ID),' not found for VENT ',N_EXPLICIT,&
                                                    ', line number ',INPUT_FILE_LINE_NUMBER
                   CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                ENDIF
@@ -10839,15 +10804,20 @@ MESH_LOOP_1: DO NM=1,NMESHES
                IF (VT%SURF_INDEX==SLICE_SURF_INDEX)         VT%BOUNDARY_TYPE = SLICE_BOUNDARY
 
                VT%IOR = IOR
-               VT%ORDINAL = NN
+               VT%ORDINAL = N_EXPLICIT
 
                ! Activate and Deactivate logic
+
+               IF (ALL(EVACUATION_ONLY)) THEN
+                  DEVC_ID = 'null'
+                  CTRL_ID = 'null'
+               ENDIF
 
                VT%ACTIVATED = .TRUE.
                VT%DEVC_ID   = DEVC_ID
                VT%CTRL_ID   = CTRL_ID
                VT%ID        = ID
-               CALL SEARCH_CONTROLLER('VENT',CTRL_ID,DEVC_ID,VT%DEVC_INDEX,VT%CTRL_INDEX,N)
+               CALL SEARCH_CONTROLLER('VENT',CTRL_ID,DEVC_ID,VT%DEVC_INDEX,VT%CTRL_INDEX,N_VENT)
                IF (DEVC_ID /= 'null') THEN
                   IF (.NOT.DEVICE(VT%DEVC_INDEX)%INITIAL_STATE) VT%ACTIVATED = .FALSE.
                ENDIF
@@ -10858,7 +10828,7 @@ MESH_LOOP_1: DO NM=1,NMESHES
                IF ( (VT%BOUNDARY_TYPE==OPEN_BOUNDARY .OR. VT%BOUNDARY_TYPE==MIRROR_BOUNDARY .OR. &
                      VT%BOUNDARY_TYPE==PERIODIC_BOUNDARY) .AND. &
                      (VT%DEVC_ID /= 'null' .OR. VT%CTRL_ID /= 'null') ) THEN
-                  IF (ID=='null') WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: VENT ',NN, &
+                  IF (ID=='null') WRITE(MESSAGE,'(A,I0,A,I0)') 'ERROR: VENT ',N_EXPLICIT, &
                      ' cannot be controlled by a device, line number ',INPUT_FILE_LINE_NUMBER
                   IF (ID/='null') WRITE(MESSAGE,'(A,A,A)')  'ERROR: VENT ',TRIM(ID),' cannot be controlled by a device'
                   CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
@@ -10884,9 +10854,9 @@ MESH_LOOP_1: DO NM=1,NMESHES
                ! Parameters for specified spread of a fire over a VENT
 
                IF (ALL(XYZ<-1.E5_EB) .AND. SPREAD_RATE>0._EB) THEN
-                  XYZ(1)=0.5_EB*(XB1+XB2)
-                  XYZ(2)=0.5_EB*(XB3+XB4)
-                  XYZ(3)=0.5_EB*(XB5+XB6)
+                  XYZ(1)=0.5_EB*(VT%X1+VT%X2)
+                  XYZ(2)=0.5_EB*(VT%Y1+VT%Y2)
+                  XYZ(3)=0.5_EB*(VT%Z1+VT%Z2)
                ENDIF
                VT%X0 = XYZ(1)
                VT%Y0 = XYZ(2)
@@ -10897,7 +10867,7 @@ MESH_LOOP_1: DO NM=1,NMESHES
 
                IF (RADIUS>0._EB) THEN
                   IF (ANY(XYZ<-1.E5_EB)) THEN
-                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',NN,' requires center point XYZ'
+                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',N_EXPLICIT,' requires center point XYZ'
                      CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                   ENDIF
                   VT%RADIUS = RADIUS
@@ -10932,15 +10902,15 @@ MESH_LOOP_1: DO NM=1,NMESHES
                IF (N_EDDY>0) THEN
                   SYNTHETIC_EDDY_METHOD = .TRUE.
                   IF (ANY(VT%SIGMA_IJ<TWO_EPSILON_EB)) THEN
-                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',NN,' L_EDDY = 0 in Synthetic Eddy Method'
+                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',N_EXPLICIT,' L_EDDY = 0 in Synthetic Eddy Method'
                      CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                   ENDIF
                   IF (ALL(ABS(VT%R_IJ)<TWO_EPSILON_EB)) THEN
-                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',NN,' VEL_RMS (or Reynolds Stress) = 0 in Synthetic Eddy Method'
+                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',N_EXPLICIT,' VEL_RMS = 0 in Synthetic Eddy Method'
                      CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                   ENDIF
                   IF (TRIM(SURF_ID)=='HVAC') THEN
-                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',NN,' Synthetic Eddy Method not permitted with HVAC'
+                     WRITE(MESSAGE,'(A,I0,A)') 'ERROR: VENT ',N_EXPLICIT,' Synthetic Eddy Method not permitted with HVAC'
                      CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
                   ENDIF
                ENDIF
@@ -10973,6 +10943,9 @@ MESH_LOOP_1: DO NM=1,NMESHES
       ENDDO K_MULT_LOOP
 
    ENDDO READ_VENT_LOOP
+
+   ENDDO COUNT_OR_READ_LOOP
+
 37 REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
 
 ENDDO MESH_LOOP_1
@@ -10983,12 +10956,7 @@ MESH_LOOP_2: DO NM=1,NMESHES
 
    IF (PROCESS(NM)/=MYID) CYCLE MESH_LOOP_2
 
-   M=>MESHES(NM)
    CALL POINT_TO_MESH(NM)
-
-   ! Get total number of vents (needed for detailed wind BC)
-
-   N_VENT_TOTAL = N_VENT_TOTAL + N_VENT
 
    ! Check vents and assign orientations
 
@@ -11104,7 +11072,12 @@ MESH_LOOP_2: DO NM=1,NMESHES
          END SELECT
       ENDIF
 
+      ! Note if the domain is sealed
+
+      IF (VT%BOUNDARY_TYPE==OPEN_BOUNDARY .OR. VT%BOUNDARY_TYPE==PERIODIC_BOUNDARY) SEALED_MESH(NM) = .FALSE.
+
       ! Check UVW
+
       IF (ABS(VT%UVW(ABS(VT%IOR))) < TWO_EPSILON_EB) THEN
          WRITE(MESSAGE,'(A,I0,A)')  'ERROR: VENT ',VT%ORDINAL, ' cannot have normal component of UVW equal to 0'
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
@@ -11119,8 +11092,8 @@ MESH_LOOP_2: DO NM=1,NMESHES
       VT => VENTS(N)
 
       IF (VT%SURF_INDEX==HVAC_SURF_INDEX .AND. N>1) THEN
-         DO NN=1,N-1
-            IF (TRIM(VT%ID)==TRIM(VENTS(NN)%ID) .AND. VENTS(NN)%SURF_INDEX==HVAC_SURF_INDEX) THEN
+         DO NNN=1,N-1
+            IF (TRIM(VT%ID)==TRIM(VENTS(NNN)%ID) .AND. VENTS(NNN)%SURF_INDEX==HVAC_SURF_INDEX) THEN
                WRITE(MESSAGE,'(A,A)')  'ERROR: Two HVAC VENTS have the same ID.  VENT ID: ',TRIM(VT%ID)
                CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.) ; RETURN
             ENDIF
@@ -11181,53 +11154,110 @@ ENDDO MESH_LOOP_2
 
 CONTAINS
 
-  SUBROUTINE DEFINE_EVACUATION_VENTS(NM,IMODE)
-    !
-    ! Define the evacuation outflow VENTs for the doors/exits.
-    !
-    USE EVAC, ONLY: N_DOORS, N_EXITS, N_CO_EXITS, EVAC_EMESH_EXITS_TYPE, EMESH_EXITS
-    IMPLICIT NONE
-    ! Passed variables
-    INTEGER, INTENT(IN) :: NM, IMODE
-    ! Local variables
-    INTEGER :: N, N_END
 
-    N_END = N_EXITS - N_CO_EXITS + N_DOORS
-    IMODE_1_IF: IF (IMODE==1) THEN
-       NEND_LOOP_1: DO N = 1, N_END
-          IF (.NOT.EMESH_EXITS(N)%DEFINE_MESH) CYCLE NEND_LOOP_1
-          IF (EMESH_EXITS(N)%IMESH==NM .OR. EMESH_EXITS(N)%MAINMESH==NM) THEN
-             N_VENT = N_VENT + 1
-             EMESH_EXITS(N)%I_VENT = N_VENT
-             EVACUATION_VENT = .TRUE.
-             EVACUATION = .TRUE.
-          END IF
-       END DO NEND_LOOP_1
-    END IF IMODE_1_IF
+SUBROUTINE SET_VENT_DEFAULTS
 
-    IMODE_2_IF: IF (IMODE==2) THEN
-       ! Evacuation VENTs (for the outflow vents) need: XB, EVACUATION, RGB, MESH_ID, SURF_ID, IOR
-       NEND_LOOP_2: DO N = 1, N_END
-          IF (.NOT.EMESH_EXITS(N)%DEFINE_MESH) CYCLE NEND_LOOP_2
-          IF (EMESH_EXITS(N)%I_VENT==NN .AND. (EMESH_EXITS(N)%IMESH==NM .OR. EMESH_EXITS(N)%MAINMESH==NM)) THEN
-             EVACUATION_VENT = .TRUE.
-             EVACUATION = .TRUE.
-             SURF_ID = 'EVACUATION_OUTFLOW'
-             MESH_ID = TRIM(MESH_NAME(NM))
-             XB(1) = EMESH_EXITS(N)%XB(1)
-             XB(2) = EMESH_EXITS(N)%XB(2)
-             XB(3) = EMESH_EXITS(N)%XB(3)
-             XB(4) = EMESH_EXITS(N)%XB(4)
-             XB(5) = EMESH_EXITS(N)%XB(5)
-             XB(6) = EMESH_EXITS(N)%XB(6)
-             RGB(:) = EMESH_EXITS(N)%RGB(:)
-             ID = TRIM('Event_' // TRIM(MESH_NAME(NM)))
-          END IF
-       END DO NEND_LOOP_2
-    END IF IMODE_2_IF
+COLOR             = 'null'
+CTRL_ID           = 'null'
+DB                = 'null'
+DEVC_ID           = 'null'
+DYNAMIC_PRESSURE  = 0._EB
+EVACUATION        = .FALSE.
+GEOM              = .FALSE.
+ID                = 'null'
+IOR               = 0
+L_EDDY            = 0._EB
+L_EDDY_IJ         = 0._EB
+MB                = 'null'
+MESH_ID           = 'null'
+MULT_ID           = 'null'
+N_EDDY            = 0
+OBST_ID           = 'null'
+OUTLINE           = .FALSE.
+PBX               = -1.E6_EB
+PBY               = -1.E6_EB
+PBZ               = -1.E6_EB
+PRESSURE_RAMP     = 'null'
+RADIUS            = -1._EB
+REYNOLDS_STRESS   = 0._EB
+RGB               = -1
+SPREAD_RATE       = -1._EB
+SURF_ID           = 'null'
+TEXTURE_ORIGIN    = -999._EB
+TMP_EXTERIOR      = -1000.
+TMP_EXTERIOR_RAMP = 'null'
+TRANSPARENCY      = 1._EB
+UVW               = -1.E12_EB
+VEL_RMS           = 0._EB
+WIND              = .FALSE.
+XYZ               = -1.E6_EB
 
-    RETURN
-  END SUBROUTINE DEFINE_EVACUATION_VENTS
+END SUBROUTINE SET_VENT_DEFAULTS
+
+
+!> \brief Define VENTs that the user has not explicitly defined
+
+SUBROUTINE DEFINE_IMPLICIT_VENTS
+
+USE EVAC, ONLY: N_DOORS, N_EXITS, N_CO_EXITS, EMESH_EXITS
+INTEGER :: N, N_END
+
+N_END = N_EXITS - N_CO_EXITS + N_DOORS
+
+IF (ALLOCATED(IMPLICIT_VENT)) DEALLOCATE(IMPLICIT_VENT)
+
+ALLOCATE(IMPLICIT_VENT(N_END+5))
+
+N_IMPLICIT_VENTS = 0
+
+! Evacuation VENTs (for the outflow vents) need: XB, EVACUATION, RGB, MESH_ID, SURF_ID, IOR
+
+NEND_LOOP_2: DO N = 1, N_END
+   IF (.NOT.EMESH_EXITS(N)%DEFINE_MESH) CYCLE NEND_LOOP_2
+   IF (EMESH_EXITS(N)%IMESH==NM .OR. EMESH_EXITS(N)%MAINMESH==NM) THEN
+      EMESH_EXITS(N)%I_VENT = N
+      N_IMPLICIT_VENTS = N_IMPLICIT_VENTS + 1
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%EVACUATION = .TRUE.
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%SURF_ID    = 'EVACUATION_OUTFLOW'
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%MESH_ID    = TRIM(MESH_NAME(NM))
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(1)      = EMESH_EXITS(N)%XB(1)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(2)      = EMESH_EXITS(N)%XB(2)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(3)      = EMESH_EXITS(N)%XB(3)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(4)      = EMESH_EXITS(N)%XB(4)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(5)      = EMESH_EXITS(N)%XB(5)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%XB(6)      = EMESH_EXITS(N)%XB(6)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%RGB(:)     = EMESH_EXITS(N)%RGB(:)
+      IMPLICIT_VENT(N_IMPLICIT_VENTS)%ID         = TRIM('Event_' // TRIM(MESH_NAME(NM)))
+   ENDIF
+ENDDO NEND_LOOP_2
+
+! For a 2-D simulation, add MIRROR VENTs to lower and upper y boundary
+
+IF (TWO_D) THEN
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%MB      = 'YMIN'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+2)%MB      = 'YMAX'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%SURF_ID = 'MIRROR'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+2)%SURF_ID = 'MIRROR'
+   N_IMPLICIT_VENTS = N_IMPLICIT_VENTS + 2
+ENDIF
+
+! For a cylindrical geometry where r_min=0, set a MIRROR BC
+
+IF (CYLINDRICAL .AND. XS<=TWO_EPSILON_EB) THEN
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%MB      = 'XMIN'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%SURF_ID = 'MIRROR'
+   N_IMPLICIT_VENTS = N_IMPLICIT_VENTS + 1
+ENDIF
+
+IF (EVACUATION_ONLY(NM)) THEN
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%MB      = 'ZMIN'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+2)%MB      = 'ZMAX'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+1)%SURF_ID = 'MIRROR'
+   IMPLICIT_VENT(N_IMPLICIT_VENTS+2)%SURF_ID = 'MIRROR'
+   N_IMPLICIT_VENTS = N_IMPLICIT_VENTS + 2
+ENDIF
+
+END SUBROUTINE DEFINE_IMPLICIT_VENTS
 
 END SUBROUTINE READ_VENT
 
@@ -11240,21 +11270,22 @@ USE MATH_FUNCTIONS, ONLY: GET_RAMP_INDEX
 USE DEVICE_VARIABLES, ONLY: DEVICE_TYPE,DEVICE,N_DEVC
 REAL(EB) :: DIAMETER,TEMPERATURE,DENSITY,RR_SUM,ZZ_GET(1:N_TRACKED_SPECIES),MASS_PER_VOLUME,PACKING_RATIO, &
             MASS_PER_TIME,T_INSERT,DT_INSERT,UVW(3),HRRPUV,XYZ(3),DX,DY,DZ,HEIGHT,RADIUS,MASS_FRACTION(MAX_SPECIES), &
-            PARTICLE_WEIGHT_FACTOR,VOLUME_FRACTION(MAX_SPECIES)
+            PARTICLE_WEIGHT_FACTOR,VOLUME_FRACTION(MAX_SPECIES),RADIATIVE_FRACTION
 INTEGER  :: NM,N,NN,NNN,II,JJ,KK,NS,NS2,NS3,NUMBER_INITIAL_PARTICLES,N_PARTICLES,N_INIT_NEW,N_INIT_READ,N_PARTICLES_PER_CELL
 LOGICAL  :: CELL_CENTERED,UNIFORM
 EQUIVALENCE(NUMBER_INITIAL_PARTICLES,N_PARTICLES)
 CHARACTER(LABEL_LENGTH) :: ID,CTRL_ID,DEVC_ID,PART_ID,SHAPE,MULT_ID,SPEC_ID(1:MAX_SPECIES),PATH_RAMP(3),RAMP_Q
+REAL     :: CROWN_BASE_HEIGHT,CROWN_BASE_WIDTH,TREE_HEIGHT
 TYPE(INITIALIZATION_TYPE), POINTER :: IN=>NULL()
 TYPE(MULTIPLIER_TYPE), POINTER :: MR=>NULL()
 TYPE(LAGRANGIAN_PARTICLE_CLASS_TYPE), POINTER :: LPC=>NULL()
 TYPE(DEVICE_TYPE), POINTER :: DV
 NAMELIST /INIT/ CELL_CENTERED,CTRL_ID,DB,DENSITY,DEVC_ID,DIAMETER,DT_INSERT,DX,DY,DZ,&
                 HEIGHT,HRRPUV,ID,MASS_FRACTION,MASS_PER_TIME,MASS_PER_VOLUME,MULT_ID,N_PARTICLES,&
-                N_PARTICLES_PER_CELL,PACKING_RATIO,PART_ID,PARTICLE_WEIGHT_FACTOR,PATH_RAMP,&
+                N_PARTICLES_PER_CELL,PACKING_RATIO,PART_ID,PARTICLE_WEIGHT_FACTOR,PATH_RAMP,RADIATIVE_FRACTION,&
                 RADIUS,RAMP_Q,SHAPE,SPEC_ID,TEMPERATURE,T_INSERT,UNIFORM,UVW,VOLUME_FRACTION,XB,XYZ,&
-                NUMBER_INITIAL_PARTICLES !Backwards compatability
-
+                NUMBER_INITIAL_PARTICLES, & !Backwards compatability
+                CROWN_BASE_HEIGHT,CROWN_BASE_WIDTH,TREE_HEIGHT !WFDS compatability
 N_INIT = 0
 N_INIT_READ = 0
 REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
@@ -11395,6 +11426,18 @@ INIT_LOOP: DO N=1,N_INIT_READ+N_INIT_RESERVED
       XB(5) = XYZ(3)
       XB(6) = XYZ(3) + HEIGHT
       IF (SHAPE=='RING') XB(6) = XB(5)
+
+      IF (CROWN_BASE_WIDTH > 0._EB) THEN !WFDS compatablitiy
+        HEIGHT = XYZ(3) + TREE_HEIGHT
+        RADIUS = 0.5_EB*CROWN_BASE_WIDTH
+        XB(1) = XYZ(1) - RADIUS
+        XB(2) = XYZ(1) + RADIUS
+        XB(3) = XYZ(2) - RADIUS
+        XB(4) = XYZ(2) + RADIUS
+        XB(5) = XYZ(3) + CROWN_BASE_HEIGHT
+        XB(6) = HEIGHT
+      ENDIF
+
    ENDIF
 
    ! Reorder XB coordinates if necessary
@@ -11459,6 +11502,7 @@ INIT_LOOP: DO N=1,N_INIT_READ+N_INIT_RESERVED
             IN%HEIGHT        = HEIGHT
             IN%RADIUS        = RADIUS
             IN%HRRPUV        = HRRPUV*1000._EB
+            IN%CHI_R         = RADIATIVE_FRACTION
             IF (HRRPUV > TWO_EPSILON_EB) INIT_HRRPUV = .TRUE.
             IF (RAMP_Q/='null') THEN
                CALL GET_RAMP_INDEX(RAMP_Q,'TIME',IN%RAMP_Q_INDEX)
@@ -11731,6 +11775,7 @@ N_PARTICLES_PER_CELL      = 0
 PARTICLE_WEIGHT_FACTOR    = 1.0_EB
 PART_ID                   = 'null'
 PATH_RAMP                 = 'null'
+RADIATIVE_FRACTION        = 0.0_EB
 RADIUS                    = -1._EB
 RAMP_Q                    = 'null'
 SHAPE                     = 'BLOCK'
@@ -11748,6 +11793,11 @@ XB(4)                     =  1000000._EB
 XB(5)                     = -1000000._EB
 XB(6)                     =  1000000._EB
 XYZ                       = -1000000._EB
+
+! For WFDS compatiblity
+CROWN_BASE_WIDTH          = -1._EB
+CROWN_BASE_HEIGHT         = -1._EB
+TREE_HEIGHT               = -1._EB
 
 END SUBROUTINE SET_INIT_DEFAULTS
 
@@ -11785,13 +11835,15 @@ ENDDO
 
 END SUBROUTINE PROC_INIT
 
+
 SUBROUTINE READ_ZONE
 
 REAL(EB), ALLOCATABLE, DIMENSION(:) :: LEAK_AREA, LEAK_REFERENCE_PRESSURE, LEAK_PRESSURE_EXPONENT
 REAL(EB) :: XYZ(3,N_ZONE_POINTS)
-INTEGER  :: N,NM,NN,N_EVAC_ZONE,N_EVAC_MESH,NM_EVAC
-LOGICAL :: SEALED,READ_ZONE_LINES,PERIODIC
+INTEGER  :: N,NM,NN,N_EVAC_ZONE,N_EVAC_MESH,NM_EVAC,IERR
+LOGICAL :: READ_ZONE_LINES,PERIODIC
 CHARACTER(LABEL_LENGTH) :: ID
+INTEGER, ALLOCATABLE, DIMENSION(:) :: COUNTS,DISPLS
 NAMELIST /ZONE/ ID,LEAK_AREA,LEAK_PRESSURE_EXPONENT,LEAK_REFERENCE_PRESSURE,PERIODIC,XB,XYZ
 
 ALLOCATE (LEAK_AREA(0:MAX_LEAK_PATHS))
@@ -11814,28 +11866,28 @@ COUNT_ZONE_LOOP: DO
 ENDDO COUNT_ZONE_LOOP
 11 REWIND(LU_INPUT) ; INPUT_FILE_LINE_NUMBER = 0
 
-! Check to see if there are any OPEN vents. If there are not, and there are no declared pressure ZONEs, assume the whole domain
-
-SEALED = .TRUE.
+! Number of evacuation zones = number of main evacuation meshes with flow fields
 
 N_EVAC_ZONE = 0
 DO NM=1,NMESHES
-   IF (.NOT.EVACUATION_ONLY(NM)) THEN
-      M => MESHES(NM)
-      DO N=1,M%N_VENT
-         VT => M%VENTS(N)
-         IF (VT%BOUNDARY_TYPE==OPEN_BOUNDARY)     SEALED = .FALSE.
-         IF (VT%BOUNDARY_TYPE==PERIODIC_BOUNDARY) SEALED = .FALSE.
-      ENDDO
-   ELSE
-      ! Number of evacuation zones = number of main evacuation meshes with flow fields
-      IF (EVACUATION_SKIP(NM)) N_EVAC_ZONE = N_EVAC_ZONE + 1
-   END IF
+   IF (EVACUATION_ONLY(NM) .AND. EVACUATION_SKIP(NM)) N_EVAC_ZONE = N_EVAC_ZONE + 1
 ENDDO
 
-! If the whole domain lacks on OPEN or PERIODIC boundary, assume it to be one big pressure zone
+! If all of the meshes are sealed and no ZONEs are declared, stop with an ERROR
 
-IF (SEALED .AND. N_ZONE==0 .AND. (NMESHES-COUNT(EVACUATION_ONLY))>1) THEN
+ALLOCATE(COUNTS(0:N_MPI_PROCESSES-1)) ; COUNTS = 0
+ALLOCATE(DISPLS(0:N_MPI_PROCESSES-1)) ; DISPLS = 0
+DO N=0,N_MPI_PROCESSES-1
+   DO NM=1,NMESHES
+      IF (PROCESS(NM)==N) COUNTS(N) = COUNTS(N) + 1
+   ENDDO
+   IF (N>0) DISPLS(N) = COUNTS(N-1) + DISPLS(N-1)
+ENDDO
+
+IF (N_MPI_PROCESSES>1) &
+   CALL MPI_ALLGATHERV(MPI_IN_PLACE,COUNTS(MYID),MPI_LOGICAL,SEALED_MESH,COUNTS,DISPLS,MPI_LOGICAL,MPI_COMM_WORLD,IERR)
+
+IF (ALL(SEALED_MESH) .AND. N_ZONE==0 .AND. (NMESHES-COUNT(EVACUATION_ONLY))>1) THEN
    WRITE(MESSAGE,'(A)')  'ERROR: The domain appears sealed. Specify one or more pressure ZONEs.'
    CALL SHUTDOWN(MESSAGE) ; RETURN
 ENDIF
@@ -11843,7 +11895,7 @@ ENDIF
 ! If the whole domain lacks on OPEN or PERIODIC boundary, assume it to be one big pressure zone
 
 READ_ZONE_LINES = .TRUE.
-IF (SEALED .AND. N_ZONE==0) THEN
+IF (ALL(SEALED_MESH) .AND. N_ZONE==0) THEN
    N_ZONE = 1
    READ_ZONE_LINES = .FALSE.
 ENDIF
@@ -14230,7 +14282,7 @@ ENDIF
 IF (QUANTITY=='AEROSOL VOLUME FRACTION') THEN
    IF (Z_INDEX<0) THEN
          WRITE(MESSAGE,'(A,A,A)')  'ERROR: SPEC_ID ',TRIM(SPEC_ID),' for AEROSOL VOLUME FRACTION must be a tracked species'
-         CALL SHUTDOWN(MESSAGE) ; RETURN     
+         CALL SHUTDOWN(MESSAGE) ; RETURN
    ELSE
       IF (SPECIES_MIXTURE(Z_INDEX)%SINGLE_SPEC_INDEX<0) THEN
          WRITE(MESSAGE,'(A,A,A)')  'ERROR: SPEC_ID ',TRIM(SPEC_ID),' for AEROSOL VOLUME FRACTION cannot be a lumped species'
