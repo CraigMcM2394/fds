@@ -25,6 +25,7 @@ $QFDS -d Atmospheric_Effects lapse_rate.fds
 $QFDS -p  8 -d Atmospheric_Effects wind_example.fds
 $QFDS -p 32 -n 8 -d Atmospheric_Effects wind_example_32.fds
 
+$QFDS -d Complex_Geometry geom_extruded_poly.fds
 $QFDS -d Complex_Geometry geom_intersection.fds
 $QFDS -d Complex_Geometry geom_bad_inverted_normals.fds
 $QFDS -d Complex_Geometry geom_simple.fds
@@ -718,11 +719,11 @@ $QFDS -d Turbulence yplus_32.fds
 $QFDS -d Turbulence ribbed_channel_20.fds
 $QFDS -d Turbulence ribbed_channel_40.fds
 $QFDS -d Turbulence ribbed_channel_80.fds
-$QFDS -d Turbulence ribbed_channel_160.fds
+#$QFDS -d Turbulence ribbed_channel_160.fds # output file committed to fds/Verification/Turbulence/
 $QFDS -d Turbulence ribbed_channel_geom_20.fds
 $QFDS -d Turbulence ribbed_channel_geom_40.fds
 $QFDS -d Turbulence ribbed_channel_geom_80.fds
-$QFDS -d Turbulence ribbed_channel_geom_160.fds
+#$QFDS -d Turbulence ribbed_channel_geom_160.fds # output file committed to fds/Verification/Turbulence/
 $QFDS -d Turbulence sem_flat_leddy_p2.fds
 $QFDS -d Turbulence sem_par_leddy_p2.fds
 $QFDS -d Turbulence sem_atm_leddy_p2.fds

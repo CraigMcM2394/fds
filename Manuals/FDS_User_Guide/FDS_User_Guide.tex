@@ -1278,7 +1278,7 @@ Key Parameter                          & Section                        & {\ct '
 \section{Stopping and Restarting Calculations}
 \label{info:restart}
 
-An important {\ct MISC} parameter is called {\ct RESTART}. Normally, a simulation consists of a sequence of events starting from ambient conditions. However, there are occasions when you might want to stop a calculation, make a few limited adjustments, and then restart the calculation from that point in time. To do this, first bring the calculation to a halt gracefully by creating a file called {\ct CHID.stop} in the directory where the output files are located. Remember that FDS is case-sensitive. The file name must be exactly the same as the {\ct CHID} and `stop' should be lower case. FDS checks for the existence of this file at each time step, and if it finds it, gracefully shuts down the calculation after first creating a final Plot3D file and a file (or files in the case of a multiple mesh job) called {\ct CHID.restart} (or {\ct CHID\_nn.restart}). To restart a job, the file(s) {\ct CHID.restart} should exist in the working directory, and the phrase {\ct RESTART=.TRUE.} needs to be added to the {\ct MISC} line of the input data file. For example, suppose that the job whose {\ct CHID} is ``plume'' is halted by creating a dummy file called {\ct plume.stop} in the directory where all the output files are being created. Note you wil also need to delete the file {\ct CHID.stop} so that FDS does not immediately stop the calculation. To restart this job from where it left off, add {\ct RESTART=.TRUE.} to the {\ct MISC} line of the input file {\ct plume.fds}, or whatever you have chosen to name the input file. The existence of a restart file with the same {\ct CHID} as the original job tells FDS to continue saving the new data in the same files as the old\footnote{By default, when a job is restarted, the spreadsheet output files will be appended at the time the job was restarted, not the time the job was stopped. If you want the output files to be appended without clipping off any existing data, even though some duplicate output will be left over, then set {\ct CLIP\_RESTART\_FILES} to {\ct .FALSE.} on the {\ct DUMP} line.}.  If {\ct RESTART\_CHID} is also specified on the {\ct MISC} line, then FDS will look for old output files tagged with this string instead of using the specified {\ct CHID} on the {\ct HEAD} line. In this case, the new output files will be tagged with {\ct CHID}, and the old output files will not be altered. When running the restarted job, the diagnostic output of the restarted job is appended to output files from the original job.
+An important {\ct MISC} parameter is called {\ct RESTART}. Normally, a simulation consists of a sequence of events starting from ambient conditions. However, there are occasions when you might want to stop a calculation, make a few limited adjustments, and then restart the calculation from that point in time. To do this, first bring the calculation to a halt gracefully by creating a file called {\ct CHID.stop} in the directory where the output files are located. Remember that FDS is case-sensitive. The file name must be exactly the same as the {\ct CHID} and `stop' should be lower case. FDS checks for the existence of this file at each time step, and if it finds it, gracefully shuts down the calculation after first creating a file (or files in the case of a multiple mesh job) called {\ct CHID.restart} (or {\ct CHID\_nn.restart}). To restart a job, the file(s) {\ct CHID.restart} should exist in the working directory, and the phrase {\ct RESTART=.TRUE.} needs to be added to the {\ct MISC} line of the input data file. For example, suppose that the job whose {\ct CHID} is ``plume'' is halted by creating a dummy file called {\ct plume.stop} in the directory where all the output files are being created. Note you wil also need to delete the file {\ct CHID.stop} so that FDS does not immediately stop the calculation. To restart this job from where it left off, add {\ct RESTART=.TRUE.} to the {\ct MISC} line of the input file {\ct plume.fds}, or whatever you have chosen to name the input file. The existence of a restart file with the same {\ct CHID} as the original job tells FDS to continue saving the new data in the same files as the old\footnote{By default, when a job is restarted, the spreadsheet output files will be appended at the time the job was restarted, not the time the job was stopped. If you want the output files to be appended without clipping off any existing data, even though some duplicate output will be left over, then set {\ct CLIP\_RESTART\_FILES} to {\ct .FALSE.} on the {\ct DUMP} line.}.  If {\ct RESTART\_CHID} is also specified on the {\ct MISC} line, then FDS will look for old output files tagged with this string instead of using the specified {\ct CHID} on the {\ct HEAD} line. In this case, the new output files will be tagged with {\ct CHID}, and the old output files will not be altered. When running the restarted job, the diagnostic output of the restarted job is appended to output files from the original job.
 
 There may be times when you want to save restart files periodically during a run as insurance against power outages or system crashes. If this is the case, at the start of the original run set {\ct DT\_RESTART=50.} on the {\ct DUMP} line to save restart files every 50~s, for example. The default for {\ct DT\_RESTART} is 1000000, meaning no restart files are created unless you gracefully stop a job by creating a dummy file called {\ct CHID.stop}.
 It is also possible to use the new control function feature (see Section~\ref{info:CTRL}) to stop a calculation or dump a restart file when the computation reaches some measurable condition such as a first sprinkler activation.
@@ -2062,7 +2062,6 @@ By default, in order to handle the most general case of a periodic domain with m
 \end{lstlisting}
 Periodic vents may not be used to connect offset vents or vents in different coordinate directions.  For such cases, you must employ HVAC capabilities (see Section~\ref{info:HVAC}).
 
-Note that, by default, particles are not recycled at periodic boundaries.  See Section~\ref{info:periodic-particles} if periodic particles are desired.
 
 \subsubsection{HVAC Vents}
 
@@ -3274,6 +3273,7 @@ The burnout time of a liquid fuel is calculated automatically based on the liqui
 \label{box_burn_away5}
 \label{box_burn_away6}
 \label{box_burn_away7}
+\label{box_burn_away8}
 \label{box_burn_away_2D}
 \label{box_burn_away_2D_residue}
 
@@ -3285,45 +3285,56 @@ If a burning object is to disappear from the simulation once it is consumed, set
 \item A parameter called {\ct BULK\_DENSITY} (kg/m$^3$) can be applied to the {\ct OBST} rather than the {\ct SURF} line. This parameter is used to determine the {\em combustible} mass of the solid object. The calculation uses the user-specified object dimensions, not those of the mesh-adjusted object. This parameter over-rides all other parameters from which a combustible mass would be calculated. Note that without a {\ct BULK\_DENSITY} specified, the total amount of mass burned will depend upon the grid resolution. The use of the {\ct BULK\_DENSITY} parameter ensures a specific fuel mass per unit volume that is independent of the grid resolution. Note that in the event that the solid phase reaction involves the production of solid residue (like char or ash), the {\ct BULK\_DENSITY} refers to the mass of the solid that is converted to gas upon reaction.
 \item The mass of the object is based on the densities of all material components ({\ct MATL}), but it is only consumed by mass fluxes of the {\em known} species. If the sum of the gaseous yields is less than one, it will take longer to consume the mass.
 \end{itemize}
-Simple examples demonstrating how solid fuels can be forced to disappear from the domain are labeled \linebreak[4] {\ct Fires/box\_burn\_away}. These are examples of a solid block of solid material that is pyrolyzed until it is completely consumed. The heat flux is generated by placing hot surfaces around the box. There is no combustion. In the first
-example, {\ct box\_burn\_away1}, the released gas is ({\ct 'METHANE'}), and in the second example, {\ct box\_burn\_away2}, it is an additional species called {\ct 'GAS'}. In the third, fourth examples, and eighth examples {\ct box\_burn\_away3}, {\ct box\_burn\_away4}, and {\ct box\_burn\_away8}, the released gas is fuel but the pyrolysis rate is specified. In the fourth and eighth cases, the heat of combustion for the foam material is set different from that of the gas, with a ratio of 0.75. The third and fourth case specifies the pyrolysis rate with {\ct HRRPUA}, and the eighth case does this with {\ct MLRPUA}. In the fifth example, {\ct box\_burn\_away2}, the first example is repeated using with {\ct N\_SIMPLE\_CHEMSITRY\_REACTIONS=2}. The results should match the first case as the creation of fuel should be based upon the total heat of combustion for {\ct 'METHANE'} and not the heat of combustion for the first reaction. The sixth case, {\ct box\_burn\_away6}, has two fuels with the second fuel defined with half the heat of combustion of the second. On the MATL input the two fuels are given equal {\ct NU} and are assigned the same {\ct HEAT\_OF\_COMBUSTION}. As a result, the second fuel will have twice as much mass in the gas phase.  The properties of the solid material were chosen simply to assure a quick calculation. The objective of the test is to
-check that the released mass and the integrated burning rate are consistent with the material properties of the block. The block is 0.4~m on a side, with a density of 20~kg/m$^3$.  The integrated densities of the pyrolysis product gases (written to {\ct box\_burn\_away\#\_devc.csv}), as well as the integrated burning rate (written to {\ct box\_burn\_away\#\_hrr.csv}) at
-the end of the 30~s calculation ought to be:
+Simple examples demonstrating how solid fuels can be forced to disappear from the domain are labeled \linebreak[4] {\ct Fires/box\_burn\_away}. These are examples of a solid block of material that is pyrolyzed until it is completely consumed. The heat flux is generated by placing hot surfaces around the box. There is no combustion because the {\ct AUTO\_IGNITION\_TEMPERATURE} has been set to a very high value. The properties of the solid material are chosen simply to assure a quick calculation. The objective is to ensure that the pyrolyzed fuel mass is consistent with the mass of the original block. The block is 0.4~m on a side, with a density of 20~kg/m$^3$. The total mass is:
 \be
 (0.4)^3 \; \hbox{m}^3 \times 20 \; \hbox{kg/m}^3 = 1.28 \; \hbox{kg}
 \ee
-except for the fourth case, where the amount of released gas is affected by the ratio of heats of combustion
-\be
-0.75 \times 1.28 \; \hbox{kg}\; = 0.96 \; \hbox{kg}
-\ee
-The same case is tested in two dimensions ({\ct box\_burn\_away\_2D} and {\ct box\_burn\_away\_2D\_residue}). In the latter case, only half of the mass is converted to fuel, leaving behind a residue that is 50~\% of the original mass. The box is forced to burn away by setting the {\ct BULK\_DENSITY} to 10~kg/m$^3$. This is the {\em combustible} mass. These two cases exhibit a fictitious increase in solid mass when new unburned surfaces are exposed as entire mesh cells disappear. The increased mass is just an artifact of reporting the residual solid mass as the product of surface density and surface area. Both the final solid mass and the gaseous degradation products should match the expected values at the end of the simulation.
 
-Finally, the test case {\ct box\_burn\_away7} shown in Fig.~\ref{box_burn_away_2D_fig} demonstrates that it is possible to burn and make disappear a thin, zero-cell thick obstruction. Versions of FDS prior to 6.7.2 did not allow this to happen. In the test case, a 0.4~m by 0.4~m by 0.01~m thin slab with a density of 20~kg/m$^3$ is heated and evaporates away, creating 0.032~kg of fuel gas.
+
+\paragraph{Case 1} ({\ct box\_burn\_away1}) The solid material undergoes a single-step pyrolysis reaction at 200~$^\circ$C that converts it all to fuel gas. Figure~\ref{box_burn_away} displays the evolution of the fuel gas.
+
+\paragraph{Case 1, 2D} ({\ct box\_burn\_away\_2D} and {\ct box\_burn\_away\_2D\_residue}) Case~1 is repeated in two dimensions. In the latter case, only half of the mass is converted to fuel, leaving behind a residue that is 50~\% of the original mass. The box is forced to burn away by setting the {\ct BULK\_DENSITY} to 10~kg/m$^3$. This is the {\em combustible} mass. These two cases exhibit a fictitious increase in solid mass when new unburned surfaces are exposed as entire mesh cells disappear. The increased mass is just an artifact of reporting the residual solid mass as the product of surface density and surface area. Both the final solid mass and the gaseous degradation products should match the expected values at the end of the simulation. The results are shown in Fig.~\ref{box_burn_away_2D_fig}.
+
+\paragraph{Case 2} ({\ct box\_burn\_away2}) This case is similar to Case~1, except that the solid material vaporizes to form an inert {\ct 'GAS'} with a molecular weight of 50~g/mol.
+
+\paragraph{Case 3} ({\ct box\_burn\_away3}) The pyrolysis rate is specified implicitly via {\ct HRRPUA}, even though the fuel gas does not burn.
+
+\paragraph{Case 4} ({\ct box\_burn\_away4}) This case is similar to Case~3, but the heat of combustion for the solid material is set to a different value from that of the primary gas phase fuel, ethylene. The solid material has a specified heat of combustion of 30,000~kJ/kg while ethylene has a specified value of 40,000~kJ/kg. Figure~\ref{box_burn_away} shows that the amount of ethylene generated is $0.75 \times 1.28 \; \hbox{kg}=0.96 \; \hbox{kg}$. Because there is only one gas phase reaction, the amount of ethylene gas produced generates an equivalent amount of heat as the solid material would with its lower heat of combustion.
+
+\paragraph{Case 5} ({\ct box\_burn\_away5}) This case is a repeat of Case~1, but with {\ct N\_SIMPLE\_CHEMSITRY\_REACTIONS} set to 2. The results should match Case~1 because the creation of fuel gas should be based upon the total heat of combustion for {\ct 'METHANE'} and not the heat of combustion for the first reaction.
+
+\paragraph{Case 6} ({\ct box\_burn\_away6}) The solid material generates two fuel gases with equal masses, $m_1=m_2=0.64\; \hbox{kg}$, and both fuel gases have the same heat of combustion, $\Delta H_1=\Delta H_2=50,000 \; \hbox{kJ/kg}$. However, the gas phase reactions assign different heats of combustion, $\Delta H'_1=50,000 \; \hbox{kJ/kg}$ and $\Delta H'_2=25,000 \; \hbox{kJ/kg}$. The equivalent masses of gases generated, $m_1'$ and $m_2'$, are determined via $m_i \Delta H_i=m_i' \Delta H_i'$ for $i=1,2$. As a result, the second fuel will have twice as much effective mass in the gas phase.
+
+\paragraph{Case 7} ({\ct box\_burn\_away7}) This case demonstrates that it is possible to burn and make disappear a thin, zero-cell thick obstruction. Versions of FDS prior to 6.7.2 did not allow this to happen. In the test case, a 0.4~m by 0.4~m by 0.01~m thin slab with a density of 20~kg/m$^3$ is heated and evaporates away, creating 0.032~kg of fuel gas.
+
+\paragraph{Case 8} ({\ct box\_burn\_away8}) This case is similar to Case~4, except that the burning rate is specified using the parameter {\ct MLRPUA}.
 
 \begin{figure}[p]
-	\begin{tabular*}{\textwidth}{lr}
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away1} &
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away2} \\
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away3} &
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away4} \\
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away5} &
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away6} \\
-	\end{tabular*}
-	\caption[Results of the {\ct box\_burn\_away} test cases]{Output of {\ct box\_burn\_away} test cases.}
-	\label{box_burn_away}
+\begin{tabular*}{\textwidth}{lr}
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away1} &
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away2} \\
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away3} &
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away4} \\
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away5} &
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away6} \\
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away7} &
+\includegraphics[width=3.0in]{SCRIPT_FIGURES/box_burn_away8}
+\end{tabular*}
+\caption[Results of the {\ct box\_burn\_away} test cases]{Output of {\ct box\_burn\_away} test cases.}
+\label{box_burn_away}
 \end{figure}
-
 
 \begin{figure}
 \begin{tabular*}{\textwidth}{lr}
 \includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away_2D} &
-\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away_2D_residue} \\
-		\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away7} &
-\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away8} \\
+\includegraphics[width=3.2in]{SCRIPT_FIGURES/box_burn_away_2D_residue}
 \end{tabular*}
-\caption[Results of the {\ct box\_burn\_away\_2D}, {\ct box\_burn\_away7}, and {\ct box\_burn\_away8} test cases]{Output of {\ct box\_burn\_away\_2D}, {\ct box\_burn\_away7},  and {\ct box\_burn\_away8} test cases.}
+\caption[Results of the {\ct box\_burn\_away\_2D} test cases]{Output of {\ct box\_burn\_away\_2D} test cases.}
 \label{box_burn_away_2D_fig}
 \end{figure}
+
+
+\FloatBarrier
 
 
 \subsection{Solid Pyrolysis 3D (Beta)}
@@ -3803,6 +3814,8 @@ If the node is connected to the FDS domain, then do not specify {\ct XYZ}.  FDS 
 A duct node must either have two or more ducts attached to it or it must have either {\ct AMBIENT=.TRUE.} or a specified {\ct VENT\_ID}.  When defining a {\ct VENT} as a component of an HVAC system you must set {\ct SURF\_ID} to {\ct 'HVAC'} and you must set the {\ct VENT\_ID}.
 
 It is permissible to have individual {\ct VENT} lines for an HVAC system span multiple meshes.
+
+Note that a {\ct VENT} being used for an HVAC system should not have a {\ct CTRL\_ID} or {\ct DEVC\_ID}. If you need to turn on or off a {\ct VENT} connected to an HVAC system, use a damper in the duct connected to {\ct VENT}.
 
 \subsection{HVAC Fan Parameters}
 \label{info:HVACfan}
@@ -5913,7 +5926,7 @@ You can specify your own cumulative number fraction (CNF)\footnote{The CNF indic
 \end{lstlisting}
 Note that the {\ct RAMP} variable {\ct T} indicates the diameter and is given in micrometers. The fourth plot in Fig.~\ref{droplet_distributions_fig} is an example of where the CNF is specified and the CVF is calculated from it. It is essentially the reverse of what is shown in the first plot, where the CVF is specified and the CNF is calculated from it.
 
-As droplets are created in the simulation, their diameters are randomly chosen based on the given distribution. You can prevent excessively large droplets from being chosen by specifying a {\ct MAXIMUM\_DIAMETER}, which is assigned an infinitely large value by default. Droplets less than a specified {\ct MINIMUM\_DIAMETER} are assumed to evaporate in a single time step. The default value is 0.005 times the value of {\ct DIAMETER}. The droplet diameter range is divided into a series of bins\footnote{By default, the range of particle sizes is divided into six bins, and the sampled particles are divided among these bins. This ensures that a reasonable number of particles are assigned to the entire spectrum of sizes. To change the default number of bins, set {\ct N\_STRATA} on the {\ct PART} line.}. To avoid very small particle weights, the distribution is clipped at the cumulative fractions of {\ct CNF\_CUTOFF} and (1 - {\ct CNF\_CUTOFF}).  Note that {\ct CNF\_CUTOFF} is set on the {\ct MISC} line. The default value of {\ct CNF\_CUTOFF} is 0.005.
+As droplets are created in the simulation, their diameters are randomly chosen based on the given distribution. You can prevent excessively large droplets from being chosen by specifying a {\ct MAXIMUM\_DIAMETER}, which is assigned an infinitely large value by default. The lower end of the size distribution is set using {\ct MINIMUM\_DIAMETER}. The default value is 0.005 times the value of {\ct DIAMETER}. Droplets are removed when their diameter decreases below {\ct KILL\_DIAMETER}. For a {\ct MONODISPERSE} distribution, {\ct KILL\_DIAMETER} is set to 0.5~\% of the mass of the droplet at its initial {\ct DIAMETER}. Otherwise droplets are removed when the droplet mass is 0.5~\% of the mass of the {\ct MINIMUM\_DIAMETER}. The droplet diameter range is divided into a series of bins\footnote{By default, the range of particle sizes is divided into six bins, and the sampled particles are divided among these bins. This ensures that a reasonable number of particles are assigned to the entire spectrum of sizes. To change the default number of bins, set {\ct N\_STRATA} on the {\ct PART} line.}. To avoid very small particle weights, the distribution is clipped at the cumulative fractions of {\ct CNF\_CUTOFF} and (1 - {\ct CNF\_CUTOFF}).  Note that {\ct CNF\_CUTOFF} is set on the {\ct MISC} line. The default value of {\ct CNF\_CUTOFF} is 0.005.
 
 To prevent FDS from generating a distribution of droplets altogether, set {\ct MONODISPERSE} to {\ct .TRUE.} on the {\ct PART} line, in which case every droplet will be assigned the same {\ct DIAMETER}.
 
@@ -5932,6 +5945,15 @@ In this case you should also specify the {\ct SURFACE\_TENSION} (N/m) of the liq
 \label{info:DENSE_VOLUME_FRACTION}
 
 If the local liquid droplet density is relatively high, as at a sprinkler or hose nozzle, the drag on individual droplets is reduced by wake effects. FDS includes a sub-model that accounts for drag reduction due to wake effects. This model is invoked if the local liquid volume fraction is greater than a threshold value called {\ct DENSE\_VOLUME\_FRACTION}, a parameter that is set on the {\ct PART} line. Setting this parameter to a relatively large number (1 is sufficient) turns off the wake reduction model. Its default value is $1\times 10^{-5}$.
+
+\subsection{Warning Messages Related to Droplets}
+\label{info:Droplet_Warnings}
+
+An important parameter for any simulation involving liquid droplets is {\ct PARTICLES\_PER\_SECOND} on the {\ct PROP} line, which is specified by the {\ct DEVC} line that includes the sprinkler or nozzle coordinates. The default value is 5000 particles per second. In some cases, this value might be too low, and you may want to raise it. The reason is that each liquid droplet that FDS explicitly tracks represents many, many more actual droplets, and the effect on the simulation of this one ``super drop'' may be relatively large. For example, a single droplet within a grid cell might decrease the gas temperature rapidly over the duration of just one time step---something that would not happen if there were many more droplets within the cell. You might even see within the output file named {\ct case\_name.err} warning messages like:
+\begin{lstlisting}
+WARNING Delta TMP_G. Mesh: 5 Particle: 3245
+\end{lstlisting}
+This means that during the temperature update of a particular grid cell in Mesh~5, the droplet whose index is 3245 caused the cell gas temperature ({\ct TMP\_G}) to change too rapidly. If you only see a few of these messages, it is not a problem given how many droplets and time steps there are. However, if you see these messages persistently, you might want to increase the {\ct PARTICLES\_PER\_SECOND} to reduce the likelihood that a single droplet will make such a dramatic change in a single time step.
 
 
 \clearpage
@@ -5968,10 +5990,6 @@ For  {\ct 'CYLINDRICAL'} or {\ct 'SPHERICAL'} particles, specify the {\ct INNER\
 
 Note that if the {\ct GEOMETRY} is set to {\ct 'SPHERICAL'} and a {\ct BOILING\_TEMPERATURE} is specified, thus invoking the liquid pyrolysis model, then the mass transfer relationships will follow those of an evaporating droplet.  The difference between this model and the default droplet model is that in this case the internal droplet temperature will be solved for using the 1D conduction solver.  Usually, the {\ct CELL\_SIZE\_FACTOR} needs to be decreased to get sufficient resolution inside the drop---you should double check the number of solid phase nodes by examining the {\ct CHID.out} file.  Also, you should set {\ct HEAT\_TRANSFER\_MODEL = 'BLOWING SPHERE'} on the {\ct SURF} line.
 
-\subsubsection{Particles with Periodic Boundary Conditions}
-\label{info:periodic-particles}
-
-By default, particles are not recycled at a periodic boundary. To recycle the particles in the $x$-direction, set {\ct PERIODIC\_X=.TRUE.} on the {\ct PART} line. Set {\ct PERIODIC\_Y=.TRUE.} and {\ct PERIODIC\_Z=.TRUE.} for the $y$- and $z$-directions, respectively.
 
 
 \subsection{Drag}
@@ -8038,15 +8056,19 @@ The namelist group {\ct DUMP} contains parameters (Table \ref{tbl:DUMP}) that co
 
 \section{Device Output: The \texorpdfstring{{\tt DEVC}}{DEVC} Namelist Group}
 
-Every device {\ct DEVC} contains a {\ct QUANTITY} that it monitors. Usually this {\ct QUANTITY} is written out to a comma-delimited spreadsheet file with the suffix {\ct \_devc.csv}. The quantities are listed in Table~\ref{tab:output}. Some quantities, such as {\ct MASS FLUX} and {\ct VOLUME FRACTION} and which are marked with an asterisk in Table~\ref{tab:output}, require a {\ct SPEC\_ID} to be specified also - refer to Section~\ref{info:outputquantities} for more details. There are two types of {\ct DEVC} output. The first is a time history of the given {\ct QUANTITY} over the course of the simulation. The second is a time-averaged profile consisting of a linear array of point devices. Each is explained below.
+Every device ({\ct DEVC}) contains a {\ct QUANTITY} that it monitors. Usually this {\ct QUANTITY} is written out to a comma-delimited spreadsheet file with the suffix {\ct \_devc.csv}. The quantities are listed in Table~\ref{tab:output}. Some quantities, such as {\ct MASS FLUX} and {\ct VOLUME FRACTION}, are marked with an asterisk in Table~\ref{tab:output} meaning that they require additional input, like a {\ct SPEC\_ID}, to be specified. Refer to Section~\ref{info:outputquantities} for more details.
+
+There are two types of {\ct DEVC} output. The first is a time history of the given {\ct QUANTITY} over the course of the simulation. The second is a time-averaged profile consisting of a linear array of point devices. Each is explained below.
 
 \subsection{Single Point Output}
 
-If you just want to record the time history of the temperature at a given point, add the line:
+If you just want to record the time history of the temperature at a given point, add a line like:
 \begin{lstlisting}
 &DEVC XYZ=6.7,2.9,2.1, QUANTITY='TEMPERATURE', ID='T-1' /
 \end{lstlisting}
-and a column will be added to the output file {\ct CHID\_devc.csv} under the label {\ct 'T-1'}. In this case, the {\ct ID} has no other role than as a column label in the output file. FDS reports the value of the {\ct QUANTITY} in the cell where the point {\ct XYZ} is located.
+and a column will be added to the output file {\ct CHID\_devc.csv} under the label {\ct 'T-1'}. FDS reports the value of the {\ct QUANTITY} in the cell containing the point {\ct XYZ}. Most scalar quantities, like {\ct TEMPERATURE}, are defined at cell centers and represent the average of that value over the entire cell. If you specify coordinates {\ct XYZ} that place the device on a cell boundary, halfway between two cell centers, FDS chooses the one that has the greater coordinate value. FDS does not take a weighted average among the nearest 8 cell centers. The reason is that some of these cell centers might be on the other side of a thin obstruction.
+
+In cases where the {\ct QUANTITY} is defined on a cell face, like {\ct 'U-VELOCITY'}, FDS chooses the nearest cell face and reports the corresponding value.
 
 \subsubsection{Devices on Solid Surfaces}
 
@@ -9508,7 +9530,7 @@ Here, the {\ct ID} is just a label in the output file. When an output quantity i
 {\ct PARTICLE X}                                & Section~\ref{info:part_output}                & m              & PA           \\ \hline
 {\ct PARTICLE Y}                                & Section~\ref{info:part_output}                & m              & PA           \\ \hline
 {\ct PARTICLE Z}                                & Section~\ref{info:part_output}                & m              & PA           \\ \hline
-{\ct PRESSURE}                                  & Perturbation pressure, $\tp-p_\infty$         & Pa             & D,I,P,S      \\ \hline
+{\ct PRESSURE}                                  & Perturbation pressure, $\tilde{p}$            & Pa             & D,I,P,S      \\ \hline
 {\ct PRESSURE COEFFICIENT}                      & Section~\ref{info:pressure_coefficient}       &                & B,D          \\ \hline
 {\ct PRESSURE ZONE}                             & Section~\ref{info:ZONE}                       &                & D,S          \\ \hline
 {\ct RADIATIVE HEAT FLUX}                       & Section~\ref{info:heat_flux}                  & kW/m$^2$       & B,D          \\ \hline
@@ -9524,7 +9546,7 @@ Here, the {\ct ID} is just a label in the output file. When an output quantity i
 {\ct SOLID SPECIFIC HEAT}                       & Section~\ref{info:DEPTH}                      & \si{kJ/(kg.K)} & D            \\ \hline
 {\ct SPECIFIC ENTHALPY}                         & Section~\ref{info:enthalpy}                   & kJ/kg          & D,I,P,S      \\ \hline
 {\ct SPECIFIC HEAT}                             & $c_p$                                         & \si{kJ/(kg.K)} & D,I,P,S      \\ \hline
-{\ct SPECIFIC INTERNAL ENERGY}                  & $h - \bar{p}/rho$                             & kJ/kg          & D,I,P,S      \\ \hline
+{\ct SPECIFIC INTERNAL ENERGY}                  & $h - \bar{p}/\rho$                            & kJ/kg          & D,I,P,S      \\ \hline
 {\ct SPECIFIC SENSIBLE ENTHALPY}                & Section~\ref{info:enthalpy}                   & kJ/kg          & D,I,P,S      \\ \hline
 {\ct SPRINKLER LINK TEMPERATURE}                & Section~\ref{info:sprinklers}                 & $^\circ$C      & D            \\ \hline
 {\ct SURFACE DENSITY}$^4$                       & Section~\ref{info:material_components}        & kg/m$^2$       & B,D          \\ \hline
@@ -9697,8 +9719,7 @@ $^6$                 \> Requires {\ct REAC\_ID}.
 \label{info:hvacoutputquantities}
 
 Table~\ref{tab:hvacoutput} summarizes the various Output Quantities for HVAC systems.  HVAC output quantities do not require an {\ct XYZ} or {\ct XB}. Quantities for a duct require the specification
-of a {\ct DUCT\_ID}, and quantities for a node require the specification of a {\ct NODE\_ID}.  Mass and volume fraction outputs also require the specification of a {\ct SPEC\_ID}. Fan
- and aircoil outputs require the {\ct DUCT\_ID} of the duct they are located in. Filter outputs require the {\ct NODE\_ID} of the node they are located in. The quantity {\ct NODE PRESSSURE DIFFERENCE} requires that one specify both elements of the array {\ct NODE\_ID}, and the pressure difference is calculated by subtracting the first node from the second.
+of a {\ct DUCT\_ID}, quantities for a node require the specification of a {\ct NODE\_ID} and quantities for a duct cell (when {\ct HVAC\_MASS\_TRANSPORT=.TRUE.}) require specification of both a {\ct DUCT\_ID} and a {\ct CELL\_L} (distance along the duct in meters where the desired cell is located).  Mass and volume fraction outputs also require the specification of a {\ct SPEC\_ID}. Fan and aircoil outputs require the {\ct DUCT\_ID} of the duct they are located in. Filter outputs require the {\ct NODE\_ID} of the node they are located in. The quantity {\ct NODE PRESSSURE DIFFERENCE} requires that one specify both elements of the array {\ct NODE\_ID}, and the pressure difference is calculated by subtracting the first node from the second.
  Note that HVAC output quantities can only be used with a {\ct DEVC}.
 
 \begin{longtable}{|l|l|l|l|@{\extracolsep{\fill}}}
@@ -9713,25 +9734,29 @@ of a {\ct DUCT\_ID}, and quantities for a node require the specification of a {\
 {\ct QUANTITY}                                  & Symbol                                    & Units            & File Type   \\
 \hline \hline
 \endhead
-{\ct AIRCOIL HEAT EXCHANGE}                     & Heat exchange rate for an aircoil         &  kW                & D   \\ \hline
-{\ct DUCT DENSITY}                              & Density of the flow in a duct             &  kg/m$^3$          & D   \\ \hline
-{\ct DUCT ENERGY FLOW}                          & Energy flow in a duct                     &  kW                & D   \\ \hline
-{\ct DUCT MASS FLOW}                            & Mass flow in a duct                       &  kg/s              & D   \\ \hline
-{\ct DUCT MASS FRACTION}                        & Mass fraction of a species in a duct      &  kg/kg             & D   \\ \hline
-{\ct DUCT TEMPERATURE}                          & Temperature of the flow in a duct         & $^\circ$C          & D   \\ \hline
-{\ct DUCT VELOCITY}                             & Velocity of a duct                        &  m/s               & D   \\ \hline
-{\ct DUCT VOLUME FLOW}                          & Volumetric flow in a duct                 &  m$^3$/s           & D   \\ \hline
-{\ct DUCT VOLUME FRACTION}                      & Volume fraction of a species in a duct    &  mol/mol           & D   \\ \hline
-{\ct FAN PRESSURE}                              & Pressure output of a fan in a duct        &  Pa                & D   \\ \hline
-{\ct FILTER LOADING}                            & Loading of a species in a filter          &  kg                & D   \\ \hline
-{\ct FILTER LOSS}                               & Flow loss through a filter                &                    & D   \\ \hline
-{\ct NODE DENSITY}                              & Density of the flow through a node        &  kg/m$^3$          & D   \\ \hline
-{\ct NODE ENTHALPY}                             & Enthalpy of a node                        &  kJ/kg             & D   \\ \hline
-{\ct NODE MASS FRACTION}                        & Mass fraction of a species in a node      &  kg/kg             & D   \\ \hline
-{\ct NODE PRESSURE}                             & Pressure of a node                        &       Pa           & D   \\ \hline
-{\ct NODE PRESSURE DIFFERENCE}                  & Pressure difference between two nodes     &       Pa           & D   \\ \hline
-{\ct NODE TEMPERATURE}                          & Temperature of the flow though a node     & $^\circ$C          & D   \\ \hline
-{\ct NODE VOLUME FRACTION}                      & Volume fraction of a species in a node    &  mol/mol           & D   \\ \hline
+{\ct AIRCOIL HEAT EXCHANGE}                     & Heat exchange rate for an aircoil           &  kW                & D   \\ \hline
+{\ct DUCT DENSITY}                              & Density of the flow in a duct               &  kg/m$^3$          & D   \\ \hline
+{\ct DUCT CELL DENSITY}                         & Gas density in a duct cell                  &  kg/m$^3$          & D   \\ \hline
+{\ct DUCT CELL MASS FRACTION}                   & Mass fraction of a species in a duct cell   &  kg/kg             & D   \\ \hline
+{\ct DUCT CELL TEMPERATURE}                     & Gas temperature in a duct cell              &  $^\circ$C         & D   \\ \hline
+{\ct DUCT CELL VOLUME FRACTION}                 & Volume fraction of a species in a duct cell &  mol/mol           & D   \\ \hline
+{\ct DUCT ENERGY FLOW}                          & Energy flow in a duct                       &  kW                & D   \\ \hline
+{\ct DUCT MASS FLOW}                            & Mass flow in a duct                         &  kg/s              & D   \\ \hline
+{\ct DUCT MASS FRACTION}                        & Mass fraction of a species in a duct        &  kg/kg             & D   \\ \hline
+{\ct DUCT TEMPERATURE}                          & Temperature of the flow in a duct           & $^\circ$C          & D   \\ \hline
+{\ct DUCT VELOCITY}                             & Velocity of a duct                          &  m/s               & D   \\ \hline
+{\ct DUCT VOLUME FLOW}                          & Volumetric flow in a duct                   &  m$^3$/s           & D   \\ \hline
+{\ct DUCT VOLUME FRACTION}                      & Volume fraction of a species in a duct      &  mol/mol           & D   \\ \hline
+{\ct FAN PRESSURE}                              & Pressure output of a fan in a duct          &  Pa                & D   \\ \hline
+{\ct FILTER LOADING}                            & Loading of a species in a filter            &  kg                & D   \\ \hline
+{\ct FILTER LOSS}                               & Flow loss through a filter                  &                    & D   \\ \hline
+{\ct NODE DENSITY}                              & Density of the flow through a node          &  kg/m$^3$          & D   \\ \hline
+{\ct NODE ENTHALPY}                             & Enthalpy of a node                          &  kJ/kg             & D   \\ \hline
+{\ct NODE MASS FRACTION}                        & Mass fraction of a species in a node        &  kg/kg             & D   \\ \hline
+{\ct NODE PRESSURE}                             & Pressure of a node                          &       Pa           & D   \\ \hline
+{\ct NODE PRESSURE DIFFERENCE}                  & Pressure difference between two nodes       &       Pa           & D   \\ \hline
+{\ct NODE TEMPERATURE}                          & Temperature of the flow though a node       & $^\circ$C          & D   \\ \hline
+{\ct NODE VOLUME FRACTION}                      & Volume fraction of a species in a node      &  mol/mol           & D   \\ \hline
 \end{longtable}
 
 
@@ -10463,7 +10488,6 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct PARTICLE\_CFL\_MIN}                            & Real         & Section~\ref{info:PART_Stability}       &            & 0.8               \\ \hline
 {\ct POROUS\_FLOOR}                                 & Logical      & Section~\ref{info:sprinklers}           &            & {\ct .TRUE.}      \\ \hline
 {\ct PR}                                            & Real         & Section~\ref{info:LES}                  &            & 0.5               \\ \hline
-{\ct PROCESS\_ALL\_MESHES}                          & Logical      & Section~\ref{sec:periodic}              &            & {\ct .FALSE.}     \\ \hline
 {\ct PROJECTION}                                    & Logical      & Section~\ref{info:CSVF}                 &            & {\ct .FALSE.}     \\ \hline
 {\ct P\_INF}                                        & Real         & Section~\ref{info:MISC_Basics}          & Pa         & 101325            \\ \hline
 {\ct RAMP\_GX}                                      & Character    & Section~\ref{info:GVEC}                 &            &                   \\ \hline
@@ -10681,15 +10705,13 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct HORIZONTAL\_VELOCITY}               & Real        & Section~\ref{info:surface_droplets}                                   & m/s            &  0.2                  \\ \hline
 {\ct ID}                                 & Character   & Section~\ref{info:PART_Basics}                                        &                &                       \\ \hline
 {\ct INITIAL\_TEMPERATURE}               & Real        & Section~\ref{thermal_part_props}                                      & $^\circ$C      & {\ct TMPA}            \\ \hline
+{\ct KILL\_DIAMETER}                     & Real        & Section~\ref{info:particle_size}                                      & $\mu$m         &                       \\ \hline
 {\ct MASSLESS}                           & Logical     & Section~\ref{info:MASSLESS}                                           &                & {\ct .FALSE.}         \\ \hline
 {\ct MAXIMUM\_DIAMETER}                  & Real        & Section~\ref{info:particle_size}                                      & $\mu$m         & Infinite              \\ \hline
-{\ct MINIMUM\_DIAMETER}                  & Real        & Section~\ref{info:particle_size}                                      & $\mu$m         & 20.                   \\ \hline
+{\ct MINIMUM\_DIAMETER}                  & Real        & Section~\ref{info:particle_size}                                      & $\mu$m         &                       \\ \hline
 {\ct MONODISPERSE}                       & Logical     & Section~\ref{info:particle_size}                                      &                & {\ct .FALSE.}         \\ \hline
 {\ct N\_STRATA}                          & Integer     & Section~\ref{info:particle_size}                                      &                & 6                     \\ \hline
 {\ct ORIENTATION(1:3,:)}                 & Real Array  & Section~\ref{info:PART_SURF}                                          &                &                       \\ \hline
-{\ct PERIODIC\_X}                        & Logical     & Section~\ref{info:periodic-particles}                                 &                & {\ct .FALSE.}         \\ \hline
-{\ct PERIODIC\_Y}                        & Logical     & Section~\ref{info:periodic-particles}                                 &                & {\ct .FALSE.}         \\ \hline
-{\ct PERIODIC\_Z}                        & Logical     & Section~\ref{info:periodic-particles}                                 &                & {\ct .FALSE.}         \\ \hline
 {\ct PERMEABILITY(3)}                    & Real Array  & Section~\ref{info:porous_media}                                       &                &                       \\ \hline
 {\ct POROUS\_VOLUME\_FRACTION}           & Real        & Section~\ref{info:porous_media}                                       &                &                       \\ \hline
 {\ct PROP\_ID}                           & Character   & Section~\ref{info:PART_Basics}                                        &                &                       \\ \hline
