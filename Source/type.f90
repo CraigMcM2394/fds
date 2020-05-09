@@ -59,7 +59,7 @@ TYPE LAGRANGIAN_PARTICLE_CLASS_TYPE
    REAL(EB) :: EMBER_DENSITY_THRESHOLD    !< Density at which vegetative particle becomes a flying ember
    REAL(EB) :: EMBER_VELOCITY_THRESHOLD   !< Velocity at which vegetative particle becomes a flying ember
    REAL(EB) :: PRIMARY_BREAKUP_TIME       !< Time (s) after insertion when droplet breaks up
-   REAL(EB) :: PRIMARY_BREAKUP_DRAG_REDUCTION_FACTOR   !< Drag reduction factor 
+   REAL(EB) :: PRIMARY_BREAKUP_DRAG_REDUCTION_FACTOR   !< Drag reduction factor
    REAL(EB) :: RUNNING_AVERAGE_FACTOR_WALL             !< Fraction of old value used in summations of droplets stuck to walls
 
    REAL(EB), ALLOCATABLE, DIMENSION(:) :: R_CNF         !< Independent variable (radius) in particle size distribution
@@ -125,6 +125,7 @@ TYPE (LAGRANGIAN_PARTICLE_CLASS_TYPE), DIMENSION(:), ALLOCATABLE, TARGET :: LAGR
 
 TYPE MATL_COMP_TYPE
    REAL(EB), POINTER, DIMENSION(:) :: RHO !< (1:NWP) Solid density (kg/m3)
+   REAL(EB), POINTER, DIMENSION(:) :: RHO_DOT !< (1:NWP) Change in solid density (kg/m3/s)
 END TYPE MATL_COMP_TYPE
 
 
@@ -136,7 +137,7 @@ END TYPE BAND_TYPE
 
 ! Note: If you change the number of scalar variables in ONE_D_M_AND_E_XFER_TYPE, adjust the numbers below
 
-INTEGER, PARAMETER :: N_ONE_D_SCALAR_REALS=32,N_ONE_D_SCALAR_INTEGERS=11,N_ONE_D_SCALAR_LOGICALS=2
+INTEGER, PARAMETER :: N_ONE_D_SCALAR_REALS=32,N_ONE_D_SCALAR_INTEGERS=12,N_ONE_D_SCALAR_LOGICALS=1
 
 !> \brief Variables associated with a WALL, PARTICLE, or CFACE boundary cell
 
@@ -157,6 +158,8 @@ TYPE ONE_D_M_AND_E_XFER_TYPE
    REAL(EB), POINTER, DIMENSION(:) :: AWM_AEROSOL         !< Accumulated aerosol mass per unit area (kg/m2)
    REAL(EB), POINTER, DIMENSION(:) :: LP_CPUA             !< Liquid droplet cooling rate unit area (W/m2)
    REAL(EB), POINTER, DIMENSION(:) :: LP_MPUA             !< Liquid droplet mass per unit area (kg/m2)
+   REAL(EB), POINTER, DIMENSION(:) :: RHO_C_S             !< Solid density times specific heat (J/m3/K)
+   REAL(EB), POINTER, DIMENSION(:) :: K_S                 !< Solid conductivity (W/m/K)
 
    TYPE(MATL_COMP_TYPE), ALLOCATABLE, DIMENSION(:) :: MATL_COMP !< (1:SF\%N_MATL) Material component
    TYPE(BAND_TYPE), ALLOCATABLE, DIMENSION(:) :: BAND           !< 1:NSB) Radiation wavelength band
@@ -173,6 +176,7 @@ TYPE ONE_D_M_AND_E_XFER_TYPE
    INTEGER, POINTER :: IOR            !< Index of orientation of the WALL cell
    INTEGER, POINTER :: PRESSURE_ZONE  !< Pressure ZONE of the adjacent gas phase cell
    INTEGER, POINTER :: NODE_INDEX     !< HVAC node index associated with surface
+   INTEGER, POINTER :: N_SUBSTEPS     !< Number of substeps in the 1-D conduction/reaction update
 
    REAL(EB), POINTER :: AREA            !< Face area (m2)
    REAL(EB), POINTER :: HEAT_TRANS_COEF !< Heat transfer coefficient (W/m2/K)
@@ -208,7 +212,6 @@ TYPE ONE_D_M_AND_E_XFER_TYPE
    REAL(EB), POINTER :: K_SUPPRESSION   !< Suppression coefficent (m2/kg/s)
 
    LOGICAL, POINTER :: BURNAWAY         !< Indicater if cell can burn away when fuel is exhausted
-   LOGICAL, POINTER :: CHANGE_THICKNESS !< Indicater if thickness of solid can change
 
 END TYPE ONE_D_M_AND_E_XFER_TYPE
 
@@ -225,7 +228,7 @@ TYPE LAGRANGIAN_PARTICLE_TYPE
    LOGICAL, POINTER :: SHOW                 !< Show the particle in Smokeview
    LOGICAL, POINTER :: SPLAT                !< The liquid droplet has hit a solid
    LOGICAL, POINTER :: EMBER                !< The particle can break away and become a burning ember
-   LOGICAL, POINTER :: PATH_PARTICLE           
+   LOGICAL, POINTER :: PATH_PARTICLE
 
    REAL(EB), POINTER :: X                   !< \f$ x \f$ coordinate of particle (m)
    REAL(EB), POINTER :: Y                   !< \f$ y \f$ coordinate of particle (m)
@@ -457,7 +460,7 @@ TYPE SURFACE_TYPE
                DT_INSERT,H_FIXED=-1._EB,H_FIXED_B=-1._EB,HM_FIXED=-1._EB,EMISSIVITY_BACK,CONV_LENGTH,XYZ(3),FIRE_SPREAD_RATE, &
                MINIMUM_LAYER_THICKNESS,INNER_RADIUS=0._EB,MASS_FLUX_VAR=-1._EB,VEL_BULK, &
                PARTICLE_SURFACE_DENSITY=-1._EB,DRAG_COEFFICIENT=2.8_EB,SHAPE_FACTOR=0.25_EB,&
-               MINIMUM_BURNOUT_TIME=1.E6_EB
+               MINIMUM_BURNOUT_TIME=1.E6_EB,DELTA_TMP_MAX=10._EB
    REAL(EB), ALLOCATABLE, DIMENSION(:) :: DX,RDX,RDXN,X_S,DX_WGT,MF_FRAC,PARTICLE_INSERT_CLOCK
    REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: RHO_0
    REAL(EB), ALLOCATABLE, DIMENSION(:) :: MASS_FRACTION,MASS_FLUX,TAU,ADJUST_BURN_RATE
@@ -469,7 +472,7 @@ TYPE SURFACE_TYPE
    INTEGER :: THERMAL_BC_INDEX,NPPC,SPECIES_BC_INDEX,VELOCITY_BC_INDEX,SURF_TYPE,N_CELLS_INI,N_CELLS_MAX=0, &
               PART_INDEX,PROP_INDEX=-1,RAMP_T_I_INDEX=-1, RAMP_T_B_INDEX=0
    INTEGER :: PYROLYSIS_MODEL,NRA,NSB
-   INTEGER :: N_LAYERS,N_MATL
+   INTEGER :: N_LAYERS,N_MATL,SUBSTEP_POWER=2
    INTEGER :: N_ONE_D_STORAGE_REALS,N_ONE_D_STORAGE_INTEGERS,N_ONE_D_STORAGE_LOGICALS
    INTEGER :: N_WALL_STORAGE_REALS,N_WALL_STORAGE_INTEGERS,N_WALL_STORAGE_LOGICALS
    INTEGER :: N_CFACE_STORAGE_REALS,N_CFACE_STORAGE_INTEGERS,N_CFACE_STORAGE_LOGICALS
@@ -543,27 +546,78 @@ TYPE OMESH_TYPE
 
 END TYPE OMESH_TYPE
 
+
+!> \brief Variables associated with a rectangular OBSTruction
+
 TYPE OBSTRUCTION_TYPE
-   CHARACTER(LABEL_LENGTH) :: DEVC_ID='null',CTRL_ID='null',PROP_ID='null',MATL_ID='null',ID='null'
-   INTEGER, DIMENSION(-3:3) :: SURF_INDEX=0
-   LOGICAL, DIMENSION(-3:3) :: SHOW_BNDF=.TRUE.
-   INTEGER, DIMENSION(3) :: RGB=(/0,0,0/)
-   INTEGER, DIMENSION(3) :: DIMENSIONS=0
-   REAL(EB) :: TRANSPARENCY=1._EB,VOLUME_ADJUST=1._EB,BULK_DENSITY=-1._EB,INTERNAL_HEAT_SOURCE=0._EB
-   REAL(EB), DIMENSION(3) :: TEXTURE=0._EB
-   REAL(EB) :: X1=0._EB,X2=1._EB,Y1=0._EB,Y2=1._EB,Z1=0._EB,Z2=1._EB,MASS=1.E6_EB
-   REAL(EB), DIMENSION(3) :: FDS_AREA=-1._EB,INPUT_AREA=-1._EB,UNDIVIDED_INPUT_AREA=-1._EB,SHAPE_AREA=0._EB
-   INTEGER :: I1=-1,I2=-1,J1=-1,J2=-1,K1=-1,K2=-1,COLOR_INDICATOR=-1,TYPE_INDICATOR=-1,ORDINAL=0,SHAPE_TYPE=-1
-   INTEGER :: DEVC_INDEX=-1,CTRL_INDEX=-1,PROP_INDEX=-1,DEVC_INDEX_O=-1,CTRL_INDEX_O=-1,MATL_INDEX=-1,MULT_INDEX=-1,&
-              RAMP_Q_INDEX=0
-   LOGICAL :: HIDDEN=.FALSE.,PERMIT_HOLE=.TRUE.,ALLOW_VENT=.TRUE.,CONSUMABLE=.FALSE.,REMOVABLE=.FALSE., &
-              HOLE_FILLER=.FALSE.,NOTERRAIN=.FALSE.,OVERLAY=.TRUE.
+
+   CHARACTER(LABEL_LENGTH) :: DEVC_ID='null'  !< Name of controlling device
+   CHARACTER(LABEL_LENGTH) :: CTRL_ID='null'  !< Name of controller
+   CHARACTER(LABEL_LENGTH) :: PROP_ID='null'  !< Name of PROPerty type
+   CHARACTER(LABEL_LENGTH) :: MATL_ID='null'  !< Name of material type
+   CHARACTER(LABEL_LENGTH) :: ID='null'       !< Name of obstruction
+
+   INTEGER, DIMENSION(-3:3) :: SURF_INDEX=0   !< SURFace properties for each face
+   INTEGER, DIMENSION(3) :: RGB=(/0,0,0/)     !< Color indices for Smokeview
+
+   REAL(EB) :: TRANSPARENCY=1._EB             !< Transparency index for Smokeview, 0=invisible, 1=solid
+   REAL(EB) :: VOLUME_ADJUST=1._EB            !< Effective volume divided by user specified volume
+   REAL(EB) :: BULK_DENSITY=-1._EB            !< Mass per unit volume (kg/m3) of specified OBST
+   REAL(EB) :: INTERNAL_HEAT_SOURCE=0._EB     !< Energy generation rate per unit volume (W/m3)
+   REAL(EB) :: X1=0._EB                       !< Lower specified \f$ x \f$ boundary (m)
+   REAL(EB) :: X2=1._EB                       !< Upper specified \f$ x \f$ boundary (m)
+   REAL(EB) :: Y1=0._EB                       !< Lower specified \f$ y \f$ boundary (m)
+   REAL(EB) :: Y2=1._EB                       !< Upper specified \f$ y \f$ boundary (m)
+   REAL(EB) :: Z1=0._EB                       !< Lower specified \f$ z \f$ boundary (m)
+   REAL(EB) :: Z2=1._EB                       !< Upper specified \f$ z \f$ boundary (m)
+   REAL(EB) :: MASS=1.E6_EB                   !< Actual mass of the obstruction (kg)
+
+   REAL(EB), DIMENSION(3) :: INPUT_AREA=-1._EB           !< Specified area of x, y, and z faces (m2)
+   REAL(EB), DIMENSION(3) :: UNDIVIDED_INPUT_AREA=-1._EB !< Area of x, y, z faces (m2) unbroken by mesh boundaries
+   REAL(EB), DIMENSION(3) :: SHAPE_AREA=0._EB            !< Area of idealized top, sides, bottom (m2)
+   REAL(EB), DIMENSION(3) :: TEXTURE=0._EB               !< Origin of texture map (m)
+   REAL(EB), DIMENSION(3) :: FDS_AREA=-1._EB             !< Effective areas of x, y, and z faces (m2)
+
+   INTEGER :: I1=-1               !< Lower I node
+   INTEGER :: I2=-1               !< Upper I node
+   INTEGER :: J1=-1               !< Lower J node
+   INTEGER :: J2=-1               !< Upper J node
+   INTEGER :: K1=-1               !< Lower K node
+   INTEGER :: K2=-1               !< Upper K node
+   INTEGER :: COLOR_INDICATOR=-1  !< Coloring code: -3=use specified color, -2=invisible, -1=no color specified
+   INTEGER :: TYPE_INDICATOR=-1   !< Smokeview code: 2=outline, -1=solid
+   INTEGER :: ORDINAL=0           !< Order of OBST in input file
+   INTEGER :: SHAPE_TYPE=-1       !< Indicator of shape carved out of larger obstruction
+   INTEGER :: DEVC_INDEX=-1       !< Index of controlling device
+   INTEGER :: CTRL_INDEX=-1       !< Index of controlling controller
+   INTEGER :: PROP_INDEX=-1       !< Index of PROPerty type
+   INTEGER :: DEVC_INDEX_O=-1     !< Original DEVC_INDEX
+   INTEGER :: CTRL_INDEX_O=-1     !< Original CTRL_INDEX
+   INTEGER :: MATL_INDEX=-1       !< Index of material
+   INTEGER :: MULT_INDEX=-1       !< Index of multiplier function
+   INTEGER :: RAMP_Q_INDEX=0      !< Index of HRR ramp
+
+   LOGICAL, DIMENSION(-3:3) :: SHOW_BNDF=.TRUE. !< Show boundary quantities in Smokeview
+   LOGICAL :: HIDDEN=.FALSE.                    !< Hide obstruction in Smokeview and ignore in simulation
+   LOGICAL :: PERMIT_HOLE=.TRUE.                !< Allow the obstruction to have a hole cutout
+   LOGICAL :: ALLOW_VENT=.TRUE.                 !< Allow a VENT to sit on the OBST
+   LOGICAL :: CONSUMABLE=.FALSE.                !< The obstruction can burn away
+   LOGICAL :: REMOVABLE=.FALSE.                 !< The obstruction can be removed from the simulation
+   LOGICAL :: HOLE_FILLER=.FALSE.               !< The obstruction fills a HOLE
+   LOGICAL :: NOTERRAIN=.FALSE.                 !< The obstruction is not part of the terrain
+   LOGICAL :: OVERLAY=.TRUE.                    !< The obstruction can have another obstruction overlap a surface
 
    ! 3D pyrolysis:
-   LOGICAL :: PYRO3D=.FALSE.,MT3D=.FALSE.,HT3D=.FALSE.,PYRO3D_LIQUID=.FALSE.
-   INTEGER :: MATL_SURF_INDEX=-1,PYRO3D_IOR=0
+   LOGICAL :: PYRO3D=.FALSE.
+   LOGICAL :: MT3D=.FALSE.
+   LOGICAL :: HT3D=.FALSE.
+   LOGICAL :: PYRO3D_LIQUID=.FALSE.
+   INTEGER :: MATL_SURF_INDEX=-1
+   INTEGER :: PYRO3D_IOR=0
    REAL(EB), ALLOCATABLE, DIMENSION(:,:,:,:) :: RHO
+
 END TYPE OBSTRUCTION_TYPE
+
 
 TYPE TRIBIN_TYPE
    REAL(EB):: X1_LOW, X1_HIGH
@@ -646,14 +700,14 @@ END TYPE IBM_CUTEDGE_TYPE
 TYPE IBM_RCEDGE_TYPE
    INTEGER,  DIMENSION(MAX_DIM+1)                  ::     IJK  ! [ i j k X1AXIS]
    INTEGER :: IE
-   ! Fields related to IBM_PLANE_INTERPOLATION=.FALSE.:
    ! Here: VIND=IAXIS:KAXIS, EP=1:INT_N_EXT_PTS,
    ! INT_VEL_IND = 1; INT_VELS_IND = 2; INT_FV_IND = 3; INT_DHDX_IND = 4; N_INT_FVARS = 4;
    ! INT_NPE_LO = INT_NPE(LOW,VIND,EP,IFACE); INT_NPE_LO = INT_NPE(HIGH,VIND,EP,IEDGE).
    ! IEDGE = 0, Cartesian GASPHASE EDGE.
    INTEGER,  ALLOCATABLE, DIMENSION(:,:)      :: INT_IJK        ! (IAXIS:KAXIS,INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
    REAL(EB), ALLOCATABLE, DIMENSION(:)        :: INT_COEF       ! (INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
-   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_XYZBF      ! (IAXIS:KAXIS,IEDGE)
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_DCOEF      ! (IAXIS:KAXIS,INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_XYZBF ,INT_NOUT     ! (IAXIS:KAXIS,IEDGE)
    INTEGER,  ALLOCATABLE, DIMENSION(:,:)      :: INT_INBFC      ! (1:3,IEDGE)
    INTEGER,  ALLOCATABLE, DIMENSION(:,:,:,:)  :: INT_NPE        ! (LOW:HIGH,VIND,EP,IEDGE)
    REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_XN,INT_CN  ! (0:INT_N_EXT_PTS,IEDGE)
@@ -815,29 +869,6 @@ TYPE IBM_EXIMFACE_TYPE
    REAL(EB) :: AREA,FN_H_S
    REAL(EB), DIMENSION(MAX_SPECIES)                                ::H_RHO_D_DZDN=0._EB,FN_ZZ=0._EB
 END TYPE IBM_EXIMFACE_TYPE
-
-! Velocity regular faces connected to cut-cell interpolation type:
-INTEGER, PARAMETER :: MAX_RCVEL_NCFACE = 5
-TYPE IBM_RCVEL_TYPE
-   INTEGER :: NCFACE, IWC=0
-   INTEGER,  DIMENSION(MAX_DIM+1)                                  ::            IJK ! [ I J K x1axis]
-   INTEGER,  DIMENSION(MAX_DIM+1,LOW_IND:HIGH_IND,MAX_RCVEL_NCFACE)::      CELL_LIST ! [RC_TYPE I J K ]
-   REAL(EB) :: VELINT
-
-   ! Here: VIND=IAXIS:KAXIS, EP=1:INT_N_EXT_PTS,
-   ! INT_VEL_IND = 1; INT_VELS_IND = 2; INT_FV_IND = 3; INT_DHDX_IND = 4; N_INT_FVARS = 4;
-   ! INT_NPE_LO = INT_NPE(LOW,VIND,EP,IFACE); INT_NPE_LO = INT_NPE(HIGH,VIND,EP,IFACE).
-   ! IFACE = 0 Cartesian GASPHASE face.
-   INTEGER,  ALLOCATABLE, DIMENSION(:,:)      :: INT_IJK        ! (IAXIS:KAXIS,INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
-   REAL(EB), ALLOCATABLE, DIMENSION(:)        :: INT_COEF       ! (INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
-   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_XYZBF, INT_NOUT ! (IAXIS:KAXIS,IFACE)
-   INTEGER,  ALLOCATABLE, DIMENSION(:,:)      :: INT_INBFC      ! (1:3,IFACE)
-   INTEGER,  ALLOCATABLE, DIMENSION(:,:,:,:)  :: INT_NPE        ! (LOW:HIGH,VIND,EP,IFACE)
-   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_XN,INT_CN  ! (0:INT_N_EXT_PTS,IFACE) ! 0 is interpolation point.
-   REAL(EB), ALLOCATABLE, DIMENSION(:,:)      :: INT_FVARS       ! (1:N_INT_FVARS,INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
-   INTEGER,  ALLOCATABLE, DIMENSION(:,:)      :: INT_NOMIND     ! (LOW_IND:HIGH_IND,INT_NPE_LO+1:INT_NPE_LO+INT_NPE_HI)
-
-END TYPE IBM_RCVEL_TYPE
 
 TYPE CSVF_TYPE
     CHARACTER(255) :: CSVFILE,UVWFILE

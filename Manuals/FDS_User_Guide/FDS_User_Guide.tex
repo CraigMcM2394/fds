@@ -2775,7 +2775,7 @@ The default parameters governing the node spacing are appropriate for simple hea
 \begin{description}
 \item[Make the node spacing more uniform] inside the material by setting {\ct STRETCH\_FACTOR(NL)=1.} on the {\ct SURF} line. This will generate a perfectly uniform mesh for layer number {\ct NL}. Values between 1 and 2 give different levels of stretching. The default value of 2 indicates that the second cell is twice as thick as the first, the third is twice the second, and so on until the mid-depth of the layer is reached, at which point the cells shrink following the same pattern. Note that {\ct STRETCH\_FACTOR} needs to be specified for all the layers unless the default value is desired.
 \item[Make the mesh cells smaller] by setting {\ct CELL\_SIZE\_FACTOR} less than 1. For example, a value of 0.5 makes the mesh cells half the size. The scaling applies to all layers.
-\item[Improve the time resolution] by setting {\ct WALL\_INCREMENT=1} on the {\ct TIME} line. This forces the solid phase solution to be updated every time step instead of the default every other time step.
+\item[Improve the time resolution] by setting {\ct WALL\_INCREMENT=1} on the {\ct TIME} line. This forces the solid phase solution to be updated every time step instead of the default every 2 time steps. If this is still not sufficient, you can direct that FDS use smaller time steps to update the solid phase heat conduction calculation than that used by the gas phase solver. This can be done specifically for a selected surface ({\ct SURF}) type. The feature works by sub-dividing the gas phase time step into halves, quarters, eighths, etc., as specified by the {\ct SURF} line integer parameter {\ct SUBSTEP\_POWER}. Its default value is 2, meaning that the solid phase time step for that particular {\ct SURF} type can be sub-divided by {\em at most} a factor of $2^2=4$. If you set {\ct SUBSTEP\_POWER} to 4, the time step will be sub-divided by {\em at most} a factor of $2^4=16$. The decision to sub-divide the time step is based on the criterion that the internal temperature of the solid should not change by more than {\ct DELTA\_TMP\_MAX}~$^\circ$C during that sub-step. The default value of {\ct DELTA\_TMP\_MAX} is 10~$^\circ$C, and this is also a {\ct SURF} parameter. You can choose {\ct QUANTITY='SUBSTEPS'} on either a {\ct DEVC} or {\ct BNDF} output line to see how many sub-steps are being used by a particular surface cell or the entire domain.
 \item[Limit the number of cells in a layer] by setting {\ct N\_LAYER\_CELLS\_MAX(:)}. This array input has a default of 1000. Reducing this value does not necessarily improve accuracy, but it does save computing time. However, rarely does the solid phase require this many cells. The output file {\ct CHID.out} contains the coordinates of the solid phase nodes.
 \end{description}
 If all the material components react and leave no solid residue, the thickness of the solid will shrink. Each of the shrinking layers will vanish from the computation when its thickness gets smaller than a prescribed limiting value. This value can be set on a {\ct SURF} line using {\ct MINIMUM\_LAYER\_THICKNESS}, defaulting to $1 \times 10^{-6}$~m. When all the material of a shrinking surface is consumed but {\ct BURN\_AWAY} is not prescribed, the surface temperature is set to {\ct TMP\_BACK}, convective heat flux to zero and burning rate to zero.
@@ -3401,7 +3401,7 @@ The {\ct SURF} and {\ct MATL} lines describing the pyrolysis of real materials c
 This section describes how to set up a simple model of the cone calorimeter or other similar apparatus. This is not a full 3-D simulation of the apparatus, but rather a 1-D simulation of the solid phase degradation under an imposed external heat flux. You can literally create a model of the cone heater and sample holder in FDS to simulate the coupling of gas and solid phase phenomena, but before even attempting this, it is worthwhile to perform a quick simulation like the one described here to test the solid phase model only.
 \begin{enumerate}
 \item Create a trivially small mesh, just to let FDS run. Since the gas phase calculation is essentially being shut off, you just need three cells in each direction ({\ct IJK=3,3,3}) for the pressure solver to function properly.
-\item On the {\ct MISC} line, set {\ct SOLID\_PHASE\_ONLY=.TRUE.} to turn off all gas phase computation and speed up the simulation.
+\item On the {\ct MISC} line, set {\ct SOLID\_PHASE\_ONLY=.TRUE.} to turn off all gas phase computation and speed up the simulation.  Note that convective heat transfer to/from the surface is still applied using the ambient temperature.  In this case the heat transfer coefficient is either specified or taken from the gas phase thermal conductivity divided by the wall-normal grid spacing.
 \item Create {\ct SPEC} lines to list any gas species created in the pyrolysis process. Do not specify a reaction using a {\ct REAC} line, as there is no gas phase combustion allowed.
 \item On the {\ct TIME} line, set {\ct WALL\_INCREMENT=1} to force FDS to update the solid phase every time step (normally it does this every other time step), and set {\ct DT} to a value that is appropriate for the solid phase calculation. Since there is no gas phase calculation that will limit the time step, it is best to control this yourself.
 \item Generate {\ct MATL} lines, plus a single {\ct SURF} line, as you normally would, except add {\ct EXTERNAL\_FLUX} to the {\ct SURF} line. This is simply a ``virtual'' source that heats the solid. Think of this as a perfect radiant panel or conical heating unit. You can control the {\ct EXTERNAL\_FLUX} using either {\ct TAU\_EF} or {\ct RAMP\_EF}. This is useful if you want to ramp up the heat flux following ignition to account for the additional radiation from the flame. See Section~\ref{info:RAMP_Time} for more details about ramps.
@@ -6025,6 +6025,32 @@ The absorption and emission of thermal radiation by a group of solid particles i
 where $C_{\rm s}$ is the shape factor (ratio of cross sectional area to surface area) of the class of particles, $A_{\rm p,s}$ is the surface area of the particle, and $V$ is the volume of the grid cell. You can specify the {\ct SHAPE\_FACTOR} of a class of particles on the {\ct PART} line. The default value is that of a sphere, 0.25.
 
 
+\subsection{Size Distribution}
+\label{info:solid_particle_size_distribution}
+\label{hot_rods}
+
+By default, solid particles of a given class are monodisperse; that is, have the same initial size which is specified via the {\ct SURF} line that is designated on the {\ct PART} line. However, it is possible to specify a distribution for the diameter of solid cylinders and spheres. Consider a case where you have a collection of cylindrical wooden rods whose diameters are uniformly distributed between 4000~$\mu$m and 6000~$\mu$m:
+\begin{lstlisting}
+&SURF ID='rod', MATL_ID='...', THICKNESS=0.0025, LENGTH=0.02, GEOMETRY='CYLINDRICAL' /
+&PART ID='rods', SURF_ID='rod', ..., MONODISPERSE=F, CNF_RAMP_ID='dist', N_STRATA=1 /
+&RAMP ID='dist', T=4000., F=0. /
+&RAMP ID='dist', T=6000., F=1. /
+\end{lstlisting}
+The material properties of the rods are specified via the {\ct MATL} line (not shown). The nominal {\rm radius} of the rods is given by the parameter {\ct THICKNESS} (m) on the {\ct SURF} line, but the distribution of the rod {\em diameters} is specified by the parameter {\ct CNF\_RAMP\_ID} (Cumulative Number Fraction) on the {\ct PART} line. The {\ct RAMP} lines designate the cumulative distribution function of the rod {\em diameters}, where the pairs ({\ct T},{\ct F}) denote a uniform distribution between 4000~$\mu$m and 6000~$\mu$m. Note that the units of the distribution are $\mu$m, not m. The parameter {\ct N\_STRATA} indicates the number of bins sub-dividing the diameter range, which is set to 1 here because the range is relatively small compared to typical liquid droplet size distributions.
+
+Following is an example of how to apply a distribution of solid particles. In the example case called {\ct WUI/hot\_rods.fds}, $L=0.02$~m long wooden rods whose radii are uniformly distributed between $r=0.002$~m and $r=0.003$~m ($f(r)=1000, \; 0.002<r<0.003; \; f(r)=0$ elsewhere) are poured onto a hot (800~$^\circ$C) floor and burned. The original density of the material is $\rho_{\rm p}=440$~kg/m$^3$. In total, 4000 rods are ejected from a small vent over the course of 10~s. The total mass is
+\be
+   m=4000 \times \pi \overline{r^2} L \rho_{\rm p} \approx 0.7 \; \hbox{kg} \quad ; \quad \overline{r^2}=\int_{0.002}^{0.003} r^2 f(r) \d r \approx 6.333 \times 10^{-6}
+\ee
+Figure~\ref{hot_rods_image} displays the distribution of radii and the mass of rods as a function of time. Note that 8~\% of the mass remains as char.
+
+\begin{figure}[ht]
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/hot_rods_dist}
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/hot_rods_mass}
+\caption[Results of the {\ct hot\_rods} test case]{(Left) Distribution of rod diameters. (Right) Total mass of rods as a function of time.}
+\label{hot_rods_image}
+\end{figure}
+
 
 \subsection{Splitting Particles}
 \label{info:particle_split}
@@ -6395,13 +6421,9 @@ The expected HRR curve is:
 
 
 
-\chapter{Earth, Wind and Fire}
+\chapter{Wind and Atmospheric Stratification}
 
-This chapter describes techniques for modeling fires outside of buildings, including the effects of wind and the atmospheric boundary layer.
-
-Most of the parameters that describe the atmosphere are entered on a single namelist line called {\ct WIND}. This namelist group is new starting with FDS version 6.6.0. Previous versions of FDS used the {\ct MISC} line for parameters related to wind and atmospheric conditions. There are three ways to specify a wind in FDS. The preferred method, originally implemented in FDS version 6.6.0, is to model the wind and corresponding temperature profile using Monin-Obukhov similarity theory (Section~\ref{info:WIND}). A second, more complicated method, is to specify a uniform horizontal forcing function and allow the wind field to develop naturally. This has proven more useful in wind tunnel applications than for natural winds (Section~\ref{info:force_vector}). The third method, which has traditionally been employed in older versions of FDS, is to create essentially a ``wall of wind'' where an entire side of the computational domain is turned into a giant fan blowing air laterally. This is the least preferred method of creating a wind (Section~\ref{info:wall_of_wind}).
-
-Wildland fires can be modeled in a number of different ways in FDS. The most common technique is to use Lagrangian particles that represent leaves, grasses, shrubbery, etc., as described in Section~\ref{pine_needles}.
+Most of the parameters that describe the atmosphere are entered on a single namelist line called {\ct WIND}. There are three ways to specify a wind in FDS. The preferred method is to model the wind and corresponding temperature profile using Monin-Obukhov similarity theory (Section~\ref{info:WIND}). A second, more complicated method, is to specify a uniform horizontal forcing function and allow the wind field to develop naturally. This has proven more useful in wind tunnel applications than for natural winds (Section~\ref{info:force_vector}). The third method, which has traditionally been employed in older versions of FDS, is to create essentially a ``wall of wind'' where an entire side of the computational domain is turned into a giant fan blowing air laterally. This is the least preferred method of creating a wind (Section~\ref{info:wall_of_wind}).
 
 
 \section{Wind Method 1: Monin-Obukhov Similarity}
@@ -6521,16 +6543,30 @@ The input files called {\ct wind\_example.fds} and {\ct wind\_example\_32.fds} i
 \subsection{Temporal and Spatial Variation of the Wind}
 \label{info:wind_ramps}
 
-The velocity components {\ct U0}, {\ct V0}, and {\ct W0} (or the velocity magnitude, {\ct SPEED}) can be made functions of time and/or height using the {\ct RAMP} functions: {\ct RAMP\_DIRECTION}, {\ct RAMP\_U0\_T}, {\ct RAMP\_V0\_T}, or {\ct RAMP\_W0\_T} to vary the wind direction or its velocity components with time; and {\ct RAMP\_U0\_Z}, {\ct RAMP\_V0\_Z}, and {\ct RAMP\_W0\_Z} to vary the velocity components with height. For example,
+The wind {\ct SPEED} and {\ct DIRECTION} can be made a function of time and/or height using {\ct RAMP} functions. With respect to time, consider the following lines of input:
 \begin{lstlisting}
-&RAMP ID='t-ramp', T=  0., F=0. /
-&RAMP ID='t-ramp', T=100., F=1. /
+&WIND SPEED=1., RAMP_SPEED='spd', RAMP_DIRECTION='dir' /
 
+&RAMP ID='dir', T=   0, F=300 /
+&RAMP ID='dir', T= 600, F=330 /
+&RAMP ID='dir', T=1200, F=350 /
+.
+.
+&RAMP ID='spd', T=   0, F=2.8 /
+&RAMP ID='spd', T= 600, F=3.1 /
+&RAMP ID='spd', T=1200, F=3.5 /
+.
+.
+\end{lstlisting}
+These lines direct FDS to vary the wind speed and direction according to the {\ct RAMP} functions {\ct 'spd'} and {\ct 'dir'}, respectively. The parameter {\ct T} is the time in s. For the direction ramp function, {\ct F} represents the direction angle in degrees from the north (positive $y$ direction). For the speed ramp function, {\ct F} represents a multiplier of the base {\ct SPEED}, which in this case is unity. An alternative to specifying the wind speed and direction is to specify the velocity components, ({\ct U0},{\ct V0}) separately, along with time ramps {\ct RAMP\_U0\_T} and {\ct RAMP\_V0\_T}.
+
+You can also vary the wind velocity components with height using the ramp functions {\ct RAMP\_U0\_Z}, {\ct RAMP\_V0\_Z}, and {\ct RAMP\_W0\_Z}.
+\begin{lstlisting}
 &RAMP ID='z-ramp', Z=  0., F=1.0 /
 &RAMP ID='z-ramp', Z=200., F=1.5 /
 &RAMP ID='z-ramp', Z=500., F=1.8 /
 \end{lstlisting}
-The parameter {\ct F} represents the fraction of the specified velocity component as a function of time {\ct T} (s) or height {\ct Z} (m). Note that if you use Monin-Obukhov similarity parameters, you need not specify the vertical profile of the wind. It will be calculated automatically.
+The parameter {\ct Z} represents the height (m) and {\ct F} the fraction of the given velocity component value. Note that if you use Monin-Obukhov similarity parameters, you should not specify the vertical profile of the wind. It will be calculated automatically.
 
 \subsection{Aerodynamic Roughness}
 \label{aerodynamic_roughness}
@@ -6711,7 +6747,18 @@ where $ \Delta z$ is the distance from the leak point to the neutral plane.  Usi
 \end{figure}
 
 
-\clearpage
+
+
+\chapter{Wildland Fire Spread}
+
+There are three ways of simulating wildland fire spread in FDS:
+\begin{enumerate}
+\item {\bf Particle Model:} The vegetation is represented by a collection of Lagrangian particles that are heated via convection and radiation (Section~\ref{pine_needles}).
+\item {\bf Boundary Fuel Model:} Ground vegetation is modeled like a porous solid with a thickness equal to the height of the vegetation (Section~\ref{info:boundary_fuel_model}).
+\item {\bf Level Set Model:} The fire front propagates using purely empirical rules (Section~\ref{info:level_set}).
+\end{enumerate}
+The Particle Model and Boundary Fuel Model use the same basic pyrolysis model, and the fire spread rate is {\em predicted} by the model. The Level Set Model relies on a set of experimentally-determined spread rates for different types of vegetation and wind speeds.
+
 
 \section{Thermal Degradation Model for Vegetation}
 \label{vegetation_model}
@@ -6870,19 +6917,8 @@ Figure~\ref{vege_inputs} includes sample input lines demonstrating how the veget
 
 
 
-\section{Wildland Fire Spread}
 
-There are three ways of simulating wildland fire spread.
-
-\begin{enumerate}
-\item {\bf Particle Method:} The vegetation is represented by a collection of Lagrangian particles that are heated via convection and radiation.
-\item {\bf Boundary Fuel Model:} Ground vegetation is modeled like a porous solid with a thickness equal to the height of the vegetation.
-\item {\bf Level Set Method:} The fire front propagates using purely empirical rules.
-\end{enumerate}
-The Particle Method and Boundary Fuel Model require thermo-physical properties of the vegetative fuels and the fire spread rate is {\em predicted} by the model. The Level Set Method relies on a set of experimentally-determined spread rates for different types of vegetation and wind speeds.
-
-
-\subsection{Lagrangian Particle Model}
+\section{Lagrangian Particle Model}
 \label{info:vegetation}
 \label{pine_needles}
 
@@ -6959,8 +6995,28 @@ In the example, 1~kg of wet pine needles occupy 1~m$^3$. The number of particles
 \label{pine_needles_fig}
 \end{figure}
 
+\subsection{Firebrands}
+\label{info:firebrands}
+\label{dragon_5a}
 
-\subsection{Boundary Fuel Model}
+Firebrands are small pieces of burning wood and vegetation that can be lofted into the air and blown by the wind ahead of a wildland fire front. Manzello et~al.~\cite{Manzello:FSJ2008a} have developed a variety of experimental apparatus designed to generate firebrands in a laboratory setting. The example input file called {\ct dragon\_5a} in the {\ct WUI} (Wildland-Urban Interface) folder is a very simple mock-up of one of these experiments. The word ``dragon'' is based on the nickname of the apparatus; 5a is the figure number in Ref.~\cite{Manzello:FSJ2008a} on which this example case is loosely based. In the experiment, 700~g of small dowels (length 50~mm, diameter 8~mm) made of Ponderosa Pine wood were poured into a small steel chamber equipped with several propane burners. The dowels were left to burn for roughly a minute subject to a slow induced air flow after which time the air flow was increased and firebrands were propelled horizontally out of a 15~cm duct 2.25~m above the lab floor. It is reported that after several replicate experiments, the average mass of the firebrands collected from pans on the floor was 57~g. The average diameter of the collected dowels was 5.6~mm, and the average length was 13.5~mm.
+
+It is not possible to simulate the experiment in FDS exactly as it was performed. The reason is that in the experiment, all 700~g of the wooden dowels were poured into the heating chamber at once. FDS cannot handle such a dense packing of Lagrangian particles. Instead, the simulated dowels are introduced at a rate of 10 per second. FDS also does not have a mechanism to break-up the dowels, reducing their length from 50~mm to 13.5~mm. Thus, the initial cylindrical particles are 13.5~mm and remain that length throughout the simulation. The diameter of the cylindrical particles is reduced, however, from 8~mm to 5.6~mm, which takes the initial density of 440~kg/m$^3$ down to 71~kg/m$^3$ because the mass of the firebrands is assumed to be 8~\% of the original. The plot in Fig.~\ref{dragon_5a_fig} shows the increasing mass of firebrands thrown to the floor in the simulation after 100~s of particle insertion. The total mass of particles inserted into the apparatus is:
+\be \pi \, (0.004 \; {\rm m})^2 \times (0.0135 \; {\rm m}) \times (440 \; {\rm kg/m}^3) \times (10 \; {\rm part/s}) \times (100 \; {\rm s}) \approx 0.3 \; {\rm kg} \ee
+The amount expected on the floor is approximately 0.024~kg.
+
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/dragon_5a}
+\end{center}
+\caption[Mass generation of firebrands in the {\ct dragon\_5a} test case]{Mass generation of firebrands in the {\ct dragon\_5a} test case.}
+\label{dragon_5a_fig}
+\end{figure}
+
+
+
+
+\section{Boundary Fuel Model}
 \label{info:boundary_fuel_model}
 
 In many simulations of wildland fire, the ground vegetation layer is too thin to be resolved explicitly, as is done when using Lagrangian particles to represent the vegetation. In such cases, the ground vegetation can be modeled as a porous boundary consisting of a layer of dry vegetation, moisture, and air, underneath of which is hard ground~\cite{Perez-Ramirez:FT2017}. The drag exerted by the vegetation is modeled using a special velocity boundary condition, and convective heat transfer is modeled via a source term in the one-dimensional heat conduction equation that is solved through the layer of vegetation and solid ground. Thermal radiation penetrates the vegetation layer via a 1-D radiative transport equation that is used for semi-transparent solids.
@@ -7011,12 +7067,14 @@ For scenarios where the fire's rate of spread (ROS) is relatively slow and the n
 The more grid cells spanning the front width, the better resolved the simulation. In badly resolved simulations, the time required for the fire to spread the width of a grid cell may be comparable or longer than the burnout time, $\Delta t_{\rm b}$. In such cases, it is necessary to specify an effective ``burnout time'' that accounts for the unresolved burning occurring at sub-grid scales. This parameter, {\ct MINIMUM\_BURNOUT\_TIME} (s), is specified on the {\ct SURF} line that provides parameters for the vegetation. By default, it has a very large value, meaning that it is ignored unless specified.
 
 
-\subsection{Comparing the Particle and Boundary Fuel Models of Vegetation}
+
+
+\section{Comparing the Particle and Boundary Fuel Models of Vegetation}
 \label{ground_vegetation}
 
 For the purpose of comparing the two methods of representing ground vegetation, either as particles or a porous boundary, consider the simple test cases in the sample folder named {\ct WUI} (Wildland-Urban Interface) under the heading {\ct ground\_vegetation}.
 
-\subsubsection{Combustible Load}
+\subsection{Combustible Load}
 \label{ground_vegetation_load}
 
 In the first case, {\ct WUI/ground\_vegetation\_load.fds}, two 3~m long channels contain $A=1$~m$^2$ of generic ground vegetation with a packing ratio, $\beta=0.01$, dry density, $\rho_{\rm dry}=400$~kg/m$^3$, height, $h_{\rm b}=0.075$~m, char yield, $y_{\rm char}=0.25$, moisture fraction, $M=0.1$. The ceiling of the channel is set to 700~$^\circ$C and the lateral walls are periodic, mimicking an infinitely wide fire front. No wind is imposed in this example. The total amount of combustibles is:
@@ -7034,7 +7092,7 @@ Figure~\ref{ground_vegetation_load_fig} displays the heat release rate (left) an
 \label{ground_vegetation_load_fig}
 \end{figure}
 
-\subsubsection{Vegetation Drag}
+\subsection{Vegetation Drag}
 \label{ground_vegetation_drag}
 
 In this next example, ground vegetation with the same properties as the previous example lines the floor of two wind tunnels that are 8~m long, 1~m wide, and 0.5~m tall. The height of the vegetation is 2.5~cm, and the grid size in the simulation is 5~cm. The tunnel walls and ceiling are free-slip. Particles model the vegetation in one tunnel; the Boundary Fuel Model is applied in the other. A 2~m/s wind is imposed, and the pressure upstream of the vegetation is recorded. The tunnel is open downstream, where the pressure is ambient. The upstream pressure ought to be similar, as shown in Fig.~\ref{ground_vegetation_drag_fig}.
@@ -7046,7 +7104,7 @@ In this next example, ground vegetation with the same properties as the previous
 \label{ground_vegetation_drag_fig}
 \end{figure}
 
-\subsubsection{Vegetation Radiation Absorption}
+\subsection{Vegetation Radiation Absorption}
 \label{ground_vegetation_radi}
 
 In this next example, ground vegetation lines the floors of two unit cubes with hot ceilings and cold floors. The walls are {\ct MIRROR} boundaries so that the ceiling and floor can be taken as infinitely wide parallel plates. The height of the vegetation is $\delta=0.05$~m, and the grid size in the simulation is 5~cm.  Particles model the vegetation in one cube; the Boundary Fuel Model is applied in the other. The surface area to volume ratio of the vegetation, $\sigma_{\rm v}=3092$~m$^{-1}$, the packing ratio, $\beta=0.02$, and the shape factor, $C_{\rm s}$=0.25. The ceiling temperature, $T_{\rm c}=993$~K; the floor temperature, $T_{\rm f}=293$~K. The emissivity of both surfaces is 1. The radiation absorption coefficient, $\kappa \equiv C_{\rm s} \sigma_{\rm v} \beta=15.46$~m$^{-1}$, and the expected heat flux to the floor is:
@@ -7062,16 +7120,16 @@ The results are shown in Fig.~\ref{ground_vegetation_radi_fig}. The Lagrangian p
 \label{ground_vegetation_radi_fig}
 \end{figure}
 
-\subsubsection{Vegetation Convective Heating}
+\subsection{Vegetation Convective Heating}
 \label{ground_vegetation_conv}
 
-In this next example, two small wind tunnels blowing hot air at $U=2$~m/s and $T_{\rm air}=300$~$^\circ$C contain small amounts of vegetation modeled using either Lagrangian particles or the Boundary Fuel Model. The tunnel walls are {\ct ADIABATIC} so that the air temperature remains fixed. In one tunnel, two cylindrical particles of different diameters ($\sigma_{\rm v,A}=3000$~m$^{-1}$ and $\sigma_{\rm v,B}=1500$~m$^{-1}$)  occupy adjacent grid cells that abut the solid floor. In the other tunnel, two adjacent patches on the floor represent the equivalent amount of vegetation via the Boundary Fuel Model. The initial vegetation temperature is $T_0=20$~$^\circ$C. Radiation heat transfer is turned off. The expected temperature increase with time is found by solving:
+In this next example, two small wind tunnels blowing hot air at $U=2$~m/s and $T_{\rm air}=300$~$^\circ$C contain small amounts of vegetation modeled using either Lagrangian particles or the Boundary Fuel Model. The tunnel walls are {\ct ADIABATIC} so that heat is not lost to the walls. Two cylindrical particles of different diameters ($\sigma_{\rm v,A}=3000$~m$^{-1}$ and $\sigma_{\rm v,B}=1500$~m$^{-1}$)  occupy adjacent grid cells that abut the solid floor. Each particle represents all the vegetation within the grid cell. In the other tunnel, two adjacent patches on the floor represent the equivalent amount of vegetation via the Boundary Fuel Model. The initial vegetation temperature is $T_0=20$~$^\circ$C. Radiation heat transfer is turned off. The expected temperature increase with time is found by solving:
 \be
    \rho_{\rm s} \, c_{\rm s} \, \frac{\d T}{\d t} = \sigma_{\rm v} \, h \, (T_{\rm air} - T)  \quad ; \quad   h= \frac{k_{\rm air}}{D} \, 0.683 \, \RE^{0.466} \, \PR^{0.333}  \quad ; \quad  \RE = \frac{\rho_{\rm air} U D}{\mu_{\rm air}} \quad ; \quad \PR=0.7
 \ee
 where the solid density $\rho_{\rm s}=400$~kg/m$^3$, specific heat $c_{\rm s}=1.5$~kJ/(kg$\cdot$K), $\rho_{\rm air}\approx 0.60$~kg/m$^3$, $\mu_{\rm air}\approx 3 \times 10^{-5}$~kg/(m$\cdot$s), $k_{\rm air}\approx 4 \times 10^{-5}$~kW/(m$\cdot$K), $D=4/\sigma_{\rm v}$. The solution is:
 \be
-   T(t) = T_{\rm air} - (T_{\rm air}-T_0) \, \exp \left(- \frac{h \, \sigma}{\rho_{\rm s} \, c_{\rm s}} \right) \; ^\circ\hbox{C}
+   T(t) = T_{\rm air} - (T_{\rm air}-T_0) \, \exp \left(- \frac{h \, \sigma_{\rm v} \, t}{\rho_{\rm s} \, c_{\rm s}} \right) \; ^\circ\hbox{C}
 \ee
 The resulting vegetation temperatures are shown in Fig.~\ref{ground_vegetation_conv_fig}.
 
@@ -7085,28 +7143,9 @@ The resulting vegetation temperatures are shown in Fig.~\ref{ground_vegetation_c
 
 \FloatBarrier
 
-\subsection{Firebrands}
-\label{info:firebrands}
-\label{dragon_5a}
-
-Firebrands are small pieces of burning wood and vegetation that can be lofted into the air and blown by the wind ahead of a wildland fire front. Manzello et~al.~\cite{Manzello:FSJ2008a} have developed a variety of experimental apparatus designed to generate firebrands in a laboratory setting. The example input file called {\ct dragon\_5a} in the {\ct WUI} (Wildland-Urban Interface) folder is a very simple mock-up of one of these experiments. The word ``dragon'' is based on the nickname of the apparatus; 5a is the figure number in Ref.~\cite{Manzello:FSJ2008a} on which this example case is loosely based. In the experiment, 700~g of small dowels (length 50~mm, diameter 8~mm) made of Ponderosa Pine wood were poured into a small steel chamber equipped with several propane burners. The dowels were left to burn for roughly a minute subject to a slow induced air flow after which time the air flow was increased and firebrands were propelled horizontally out of a 15~cm duct 2.25~m above the lab floor. It is reported that after several replicate experiments, the average mass of the firebrands collected from pans on the floor was 57~g. The average diameter of the collected dowels was 5.6~mm, and the average length was 13.5~mm.
-
-It is not possible to simulate the experiment in FDS exactly as it was performed. The reason is that in the experiment, all 700~g of the wooden dowels were poured into the heating chamber at once. FDS cannot handle such a dense packing of Lagrangian particles. Instead, the simulated dowels are introduced at a rate of 10 per second. FDS also does not have a mechanism to break-up the dowels, reducing their length from 50~mm to 13.5~mm. Thus, the initial cylindrical particles are 13.5~mm and remain that length throughout the simulation. The diameter of the cylindrical particles is reduced, however, from 8~mm to 5.6~mm, which takes the initial density of 440~kg/m$^3$ down to 71~kg/m$^3$ because the mass of the firebrands is assumed to be 8~\% of the original. The plot in Fig.~\ref{dragon_5a_fig} shows the increasing mass of firebrands thrown to the floor in the simulation after 100~s of particle insertion. The total mass of particles inserted into the apparatus is:
-\be \pi \, (0.004 \; {\rm m})^2 \times (0.0135 \; {\rm m}) \times (440 \; {\rm kg/m}^3) \times (10 \; {\rm part/s}) \times (100 \; {\rm s}) \approx 0.3 \; {\rm kg} \ee
-The amount expected on the floor is approximately 0.024~kg.
-
-\begin{figure}[ht]
-\begin{center}
-\includegraphics[height=2.2in]{SCRIPT_FIGURES/dragon_5a}
-\end{center}
-\caption[Mass generation of firebrands in the {\ct dragon\_5a} test case]{Mass generation of firebrands in the {\ct dragon\_5a} test case.}
-\label{dragon_5a_fig}
-\end{figure}
 
 
-\FloatBarrier
-
-\subsection{Level Set Model for Wildland Fire Spread}
+\section{Level Set Model for Wildland Fire Spread}
 \label{info:level_set}
 
 For simulations of wildland fires spanning large areas that cannot be gridded at fine enough resolution to predict fire spread using a physics-based model, there is an empirical model built into FDS based on level sets~\cite{Bova:IJWF2015}. The methodology reproduces in an Eulerian framework the approach used in the Lagrangian-based fire front-tracking model FARSITE~\cite{Finney:FARSITE}. This approach makes use of the Rothermel-Albini~\cite{Rothermel:1972,Albini:1976} surface fire spread rate formulae and the assumption that a surface fire spreading from a point under certain wind, slope and vegetation conditions does so with an ellipse-shaped fire front with, for a given wind speed, a fixed length-to-breadth ratio~\cite{Richards:1990}.
@@ -7183,7 +7222,7 @@ The parameter {\ct VEG\_LSET\_COUPLED=T} directs FDS to use the local wind field
 For all models, the total mineral content $S_{\rm t}=0.056$, the effective mineral content $S_{\rm e}=0.01$, the heat of combustion $\Delta H=18600$~kW/kg, density $\rho_{\rm p}=510$~kg/m$^3$, moisture content of fine, medium, and large dead vegetation, $M_{\rm d,1}=0.03$, $M_{\rm d,2}=0.04$, $M_{\rm d,3}=0.05$, moisture content of live woody and herbaceous vegetation $M_{\rm l,w}=M_{\rm l,h}= 0.70$.
 \end{sidewaystable}
 
-\subsubsection{Simple Test Cases}
+\subsection{Simple Test Cases}
 
 Bova et al.~\cite{Bova:IJWF2015} compare the level set calculation that has been implemented in FDS with the identical algorithm in the U.S. Forest Service FARSITE model. The three contour plots in Fig.~\ref{Bova_fig} match those in Figs.~1(a), 1(b), and 4(a) in the paper. The FDS input files, {\ct WUI/Bova\_1a.fds}, {\ct WUI/Bova\_1b.fds}, and {\ct WUI/Bova\_4a.fds} all have the same {\ct SURF} line that defines the vegetation. Note that in these examples, there is no actual fire nor does the level set calculation depend on the local wind field. The purpose of the exercise is simply to test the level set algorithm.
 \begin{lstlisting}
@@ -7204,6 +7243,8 @@ Bova et al.~\cite{Bova:IJWF2015} compare the level set calculation that has been
 \caption[Level set test cases]{Level set test cases from Bova et al.~\cite{Bova:IJWF2015}, Figs.~1(a), 1(b), and 4(a).}
 \label{Bova_fig}
 \end{figure}
+
+
 
 
 
@@ -8279,7 +8320,7 @@ This section discusses output options for Lagrangian particles.
 \subsection{Liquid Droplets that are Attached to Solid Surfaces}
 \label{bucket_test_1}
 
-Liquid droplets (as opposed to solid particles) ``stick'' to solid surfaces unless directed otherwise. There are various quantities that describe these populations. For example, {\ct 'MPUA'} is the \underline{M}ass \underline{P}er \underline{U}nit \underline{A}rea of the droplets defined by {\ct PART\_ID}. Likewise, {\ct 'AMPUA'} is the \underline{A}ccumulated \underline{M}ass \underline{P}er \underline{U}nit \underline{A}rea. Both of these are given in units of kg/m$^2$. Think of these outputs as measures of the instantaneous mass density per unit area, and the accumulated total, respectively. These quantities are not identical measures.  The quantity {\ct 'AMPUA'} is analogous to a ``bucket test,'' where the droplets are collected in buckets and the total mass determined at the end of a given time period. In this case each grid cell on the floor is considered its own bucket.  Each droplet is counted only once when it reaches the floor\footnote{Be aware of the fact that the default behavior for liquid droplets hitting the ``floor,'' that is, the plane $z=\hbox{\ct ZMIN}$, is to disappear ({\ct POROUS\_FLOOR=.TRUE.} on the {\ct MISC} line). In this case, {\ct 'MPUA'} will be zero, but {\ct 'AMPUA'} will not. FDS stores the droplet mass just before removing the droplet from the simulation for the purpose of saving CPU time.}. {\ct MPUA} counts a droplet whenever it is on any solid surface, including the walls. If the droplet moves from one solid wall cell to another, it will be counted again. The cooling of a solid surface by droplets of a given type is given by {\ct 'CPUA'}, the \underline{C}ooling \underline{P}er \underline{U}nit \underline{A}rea in units of kW/m$^2$. Since a typical sprinkler simulation only tracks a small fraction of the droplets emitted from a sprinkler, both {\ct MPUA} and {\ct CPUA} also perform an exponential smoothing. This avoids having spotted distributions on surfaces due to the infrequent arrival of droplets that likely have a high weighting factor.
+Liquid droplets (as opposed to solid particles) ``stick'' to solid surfaces unless directed otherwise. There are various quantities that describe these populations. For example, {\ct 'MPUA'} is the \underline{M}ass \underline{P}er \underline{U}nit \underline{A}rea of the droplets\footnote{The output quantity {\ct 'MPUA'} can be used for both liquid and solid particles. However, {\ct 'AMPUA'} is appropriate only for liquid droplets.} defined by {\ct PART\_ID}. Likewise, {\ct 'AMPUA'} is the \underline{A}ccumulated \underline{M}ass \underline{P}er \underline{U}nit \underline{A}rea. Both of these are given in units of kg/m$^2$. Think of these outputs as measures of the instantaneous mass density per unit area, and the accumulated total, respectively. These quantities are not identical measures.  The quantity {\ct 'AMPUA'} is analogous to a ``bucket test,'' where the droplets are collected in buckets and the total mass determined at the end of a given time period. In this case each grid cell on the floor is considered its own bucket.  Each droplet is counted only once when it reaches the floor\footnote{Be aware of the fact that the default behavior for liquid droplets hitting the ``floor,'' that is, the plane $z=\hbox{\ct ZMIN}$, is to disappear ({\ct POROUS\_FLOOR=.TRUE.} on the {\ct MISC} line). In this case, {\ct 'MPUA'} will be zero, but {\ct 'AMPUA'} will not. FDS stores the droplet mass just before removing the droplet from the simulation for the purpose of saving CPU time.}. {\ct MPUA} counts a droplet whenever it is on any solid surface, including the walls. If the droplet moves from one solid wall cell to another, it will be counted again. The cooling of a solid surface by droplets of a given type is given by {\ct 'CPUA'}, the \underline{C}ooling \underline{P}er \underline{U}nit \underline{A}rea in units of kW/m$^2$. Since a typical sprinkler simulation only tracks a small fraction of the droplets emitted from a sprinkler, both {\ct MPUA} and {\ct CPUA} also perform an exponential smoothing. This avoids having spotted distributions on surfaces due to the infrequent arrival of droplets that likely have a high weighting factor.
 
 Each of the output quantities mentioned above has a variant in which the quantity is summed by species rather than particle type. For example, the quantity {\ct 'AMPUA\_Z'} along with a specified {\ct SPEC\_ID} rather than a {\ct PART\_ID} will sum the given output quantity over all particle classes with the given {\ct SPEC\_ID}.
 
@@ -8647,7 +8688,7 @@ INTENSITIES
 \subsection{Detailed Spray Properties}
 \label{PDPA}
 
-Detailed experimental measurements of sprays using \underline{P}hase \underline{D}oppler \underline{P}article \underline{A}nalysis (PDPA) provide information on the droplet size distribution, speed and concentration. A special device type is defined via a {\ct DEVC} line to simulate the PDPA measurement. The actual quantity to measure, and the details of the measurement are defined using an associated {\ct PROP} line.
+Detailed experimental measurements of sprays\footnote{The {\ct 'PDPA'} output quantities generally apply to liquid droplets. However, they also can be applied to solid particles.} using \underline{P}hase \underline{D}oppler \underline{P}article \underline{A}nalysis (PDPA) provide information on the droplet size distribution, speed and concentration. A special device type is defined via a {\ct DEVC} line to simulate the PDPA measurement. The actual quantity to measure, and the details of the measurement are defined using an associated {\ct PROP} line.
 
 By default, the PDPA device output at time $t$ is computed as a time integral
 \be
@@ -9679,6 +9720,7 @@ be found in Volume~1 of the FDS Technical Reference Guide~\cite{FDS_Math_Guide}.
 {\ct STRAIN RATE Y}                             & $\partial u/\partial z + \partial w/\partial x$   & 1/s            & D,I,P,S      \\ \hline
 {\ct STRAIN RATE Z}                             & $\partial v/\partial x + \partial u/\partial y$   & 1/s            & D,I,P,S      \\ \hline
 {\ct SUBGRID KINETIC ENERGY}                    & Section~\ref{info:meshquality}                    & \si{m^2/s^2}   & D,S          \\ \hline
+{\ct SUBSTEPS}                                  & Section~\ref{info:solid_phase_stability}          &                & B,D          \\ \hline
 {\ct SUM LUMPED MASS FRACTIONS}                 & $\sum_i Z_i$ (should be 1)                        &                & D,S          \\ \hline
 {\ct SUM PRIMITIVE MASS FRACTIONS}              & $\sum_\alpha Y_\alpha$ (should be 1)              &                & D,S          \\ \hline
 %{\ct TOTAL MASS FLUX X} & $\overline{\rho Y_\alpha} u + \rho D_\alpha \partial Y_\alpha/\partial x$ & kg/s/m$^2$     & D,I,P,S      \\ \hline
@@ -10522,7 +10564,7 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 % Undocumented: AEROSOL_AL2O3, AEROSOL_SCRUBBING, CC_IBM(MV), CCVOL_LINK(MV), CC_SLIPIBM_VELO(MV,debug), CC_ZEROIBM_VELO(MV,debug), CHECK_MASS_CONSERVE(MV), COMPUTE_CUTCELLS_ONLY(MV),
 % CONSTANT_H_SOLID, DO_IMPLICIT_CCREGION (MV), ENTHALPY_TRANSPORT (RJM),
 % EVAP_MODEL, EXTERNAL_BOUNDARY_CORRECTION, HT3D_TEST (RJM), MAXIMUM_GEOMETRY_FACES(MV), MAXIMUM_GEOMETRY_ZVALS(MV), NUCLEATION_SITES, PERIODIC_TEST (RJM),
-% POSITIVE_ERROR_TEST, PROFILING, QFAN_BETA_TEST, SLIP_CONDITION(RJM), TENSOR_DIFFUSIVITY (RJM), TURB_INIT_CLOCK (RJM),
+% POSITIVE_ERROR_TEST, PROFILING, QFAN_BETA_TEST, TENSOR_DIFFUSIVITY (RJM), TURB_INIT_CLOCK (RJM),
 % UVW_FILE (RJM), STORE_DIVERGENCE_CORRECTION (RJM)
 
 \vspace{\baselineskip}
@@ -11149,6 +11191,7 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct CONVECTIVE\_HEAT\_FLUX}                              & Real            & Section~\ref{info:convection}             & \si{kW/m^2}         &                         \\ \hline
 {\ct CONVERT\_VOLUME\_TO\_MASS}                           & Logical         & Section~\ref{info:MASS_FLUX}              &                     & {\ct .FALSE.}           \\ \hline
 {\ct DEFAULT}                                             & Logical         & Section~\ref{info:SURF}                   &                     & {\ct .FALSE.}           \\ \hline
+{\ct DELTA\_TMP\_MAX}                                     & Real            & Section~\ref{info:solid_phase_stability}  & $^\circ$C           & 10                      \\ \hline
 {\ct DRAG\_COEFFICIENT}                                   & Real            & Section~\ref{info:boundary_fuel_model}    &                     & 2.8                     \\ \hline
 {\ct DT\_INSERT}                                          & Real            & Section~\ref{info:particle_flux}          & s                   & 0.01                    \\ \hline
 {\ct E\_COEFFICIENT}                                      & Real            & Section~\ref{info:suppression}            & \si{m^2/(kg.s)}     &                         \\ \hline
@@ -11211,6 +11254,7 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct SPEC\_ID}                                            & Character       & Section~\ref{info:MASS_FLUX}              &                     &                         \\ \hline
 {\ct SPREAD\_RATE}                                        & Real            & Section~\ref{info:spread}                 & m/s                 &                         \\ \hline
 {\ct STRETCH\_FACTOR(:) }                                 & Real            & Section~\ref{info:solid_phase_stability}  &                     & 2.                      \\ \hline
+{\ct SUBSTEP\_POWER}                                      & Integer         & Section~\ref{info:solid_phase_stability}  &                     & 2                       \\ \hline
 {\ct SURFACE\_VOLUME\_RATIO(:) }                          & Real            & Section~\ref{pine_needles}                & 1/m                 &                         \\ \hline
 {\ct TAU\_EF}                                             & Real            & Section~\ref{info:RAMP_Time}              & s                   & 1.                      \\ \hline
 {\ct TAU\_MF(:)}                                          & Real Array      & Section~\ref{info:RAMP_Time}              & s                   & 1.                      \\ \hline
@@ -11425,14 +11469,14 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct RAMP\_FVX\_T}                              & Character     & Section~\ref{info:force_vector}               &               &                   \\ \hline
 {\ct RAMP\_FVY\_T}                              & Character     & Section~\ref{info:force_vector}               &               &                   \\ \hline
 {\ct RAMP\_FVZ\_T}                              & Character     & Section~\ref{info:force_vector}               &               &                   \\ \hline
-{\ct RAMP\_SPEED}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
+{\ct RAMP\_SPEED}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
 {\ct RAMP\_TMP0\_Z}                             & Character     & Section~\ref{info:stratification}             &               &                   \\ \hline
-{\ct RAMP\_U0\_T}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
-{\ct RAMP\_U0\_Z}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
-{\ct RAMP\_V0\_T}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
-{\ct RAMP\_V0\_Z}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
-{\ct RAMP\_W0\_T}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
-{\ct RAMP\_W0\_Z}                               & Character     & Section~\ref{info:WIND}                       &               &                   \\ \hline
+{\ct RAMP\_U0\_T}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
+{\ct RAMP\_U0\_Z}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
+{\ct RAMP\_V0\_T}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
+{\ct RAMP\_V0\_Z}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
+{\ct RAMP\_W0\_T}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
+{\ct RAMP\_W0\_Z}                               & Character     & Section~\ref{info:wind_ramps}                 &               &                   \\ \hline
 {\ct SPEED}                                     & Real          & Section~\ref{info:WIND}                       & m/s           & 0.                \\ \hline
 {\ct SPONGE\_CELLS}                             & Integer       & Section~\ref{info:SPONGE_CELLS}               &               & 3                 \\ \hline
 {\ct STRATIFICATION}                            & Logical       & Section~\ref{info:stratification}             &               & {\ct .TRUE.}      \\ \hline
@@ -11650,6 +11694,18 @@ Rank,MAIN,DIVG, ... , Total T_USED (s)
 where {\ct Rank} is the number of the MPI process (starting at 0), {\ct MAIN}, {\ct DIVG}, and so on, are major routines, and {\ct 'Total T\_USED (s)'} is the total CPU time consumed by that particular MPI process. Typically, the total time is similar. The time spent in {\ct MAIN} is essentially overhead -- time spent {\em not} working on the calculation. If you want to know if your work load is balanced, take a look at the time spent in {\ct MAIN}. It should be similar for all MPI processes. If one of the MPI processes has a noticeably smaller value for {\ct MAIN}, then that process is working on the core routines while the other processes sit idle in {\ct MAIN}.
 
 The {\ct CHID\_cpu.csv} file is printed out at the end of the simulation. To force it to be printed out periodically during the simulation, set {\ct DT\_CPU} on the {\ct DUMP} line. Its default value is very large, meaning that by default, the CPU information is only printed at the end of the simulation.
+
+\section{Time Step Data}
+\label{out:timestep}
+
+The file called {\ct CHID\_steps.csv} records data on the size of time steps and the amount of elapsed CPU time.
+\begin{lstlisting}
+Time Step,Wall Time,Step Size,Simulation Time,CPU Time
+1,2020-04-29T10:23:13.631-04:00,   0.100E+00,   0.10000,   0.23438
+           .
+           .
+\end{lstlisting}
+where {\ct Time Step} is the current time step, {\ct Wall Time} is the date and time for the indicated time step, {\ct Step Size} is the size of the current time step in seconds, {\ct Simulation Time} is the current time of the simulation in seconds, and {\ct CPU Time} is the elapsed CPU time since starting FDS. Note that the first time step will include time spent reading the input file and initializing FDS.
 
 \section{Gas Mass Data}
 
