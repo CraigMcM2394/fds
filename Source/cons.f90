@@ -220,7 +220,7 @@ LOGICAL :: UVW_RESTART=.FALSE.              !< Initialize velocity field with va
 LOGICAL :: PARTICLE_CFL=.FALSE.             !< Include particle velocity as a constraint on time step
 LOGICAL :: IBM_FEM_COUPLING=.FALSE.
 LOGICAL :: ENTHALPY_TRANSPORT=.TRUE.
-LOGICAL :: CONSTANT_H_SOLID=.TRUE.
+LOGICAL :: CONSTANT_H_SOLID_TO_DROPLET=.TRUE. !< Use constant heat transfer coefficient between walls and droplets
 LOGICAL :: POTENTIAL_TEMPERATURE_CORRECTION=.FALSE.
 LOGICAL :: RTE_SOURCE_CORRECTION=.TRUE.     !< Apply a correction to the radiation source term to achieve desired rad fraction
 LOGICAL :: LAPLACE_PRESSURE_CORRECTION=.FALSE.
@@ -449,7 +449,10 @@ LOGICAL  :: UPDATE_DEVICES_AGAIN=.FALSE.
 
 ! Miscellaneous mesh dimensions
 
-REAL(EB) :: CHARACTERISTIC_CELL_SIZE=1.E6_EB,MESH_SEPARATION_DISTANCE,NEIGHBOR_SEPARATION_DISTANCE
+REAL(EB) :: CHARACTERISTIC_CELL_SIZE=1.E6_EB  !< \f$ \min \left( \delta \xi \, \delta \eta \, \delta \zeta \right)^{1/3} \f$
+REAL(EB) :: MESH_SEPARATION_DISTANCE          !< Meshes separated if gap greater than min(0.001,0.05*CHARACTERISTIC_CELL_SIZE) (m)
+REAL(EB) :: NEIGHBOR_SEPARATION_DISTANCE      !< No message passing beyond 5*CHARACTERISTIC_CELL_SIZE (m)
+REAL(EB) :: ALIGNMENT_TOLERANCE=0.001_EB      !< Maximum ratio of sizes of abutting grid cells
 
 ! Logical units and output file names
 
@@ -484,7 +487,7 @@ INTEGER :: N_SURF,N_SURF_RESERVED,N_MATL,MIRROR_SURF_INDEX,OPEN_SURF_INDEX,INTER
            INERT_SURF_INDEX=0,PERIODIC_SURF_INDEX,PERIODIC_WIND_SURF_INDEX,HVAC_SURF_INDEX=-1,EVACUATION_SURF_INDEX=-1,&
            MASSLESS_TRACER_SURF_INDEX, MASSLESS_TARGET_SURF_INDEX,DROPLET_SURF_INDEX,VEGETATION_SURF_INDEX,NWP_MAX
 REAL(EB), ALLOCATABLE, DIMENSION(:) :: AAS,BBS,DDS,DDT,DX_S,RDX_S,RDXN_S,DX_WGT_S, &
-                                       C_S,RHO_S,Q_S,TWO_DX_KAPPA_S,X_S_NEW,R_S,MF_FRAC,REGRID_FACTOR,R_S_NEW
+                                       RHO_S,Q_S,TWO_DX_KAPPA_S,X_S_NEW,R_S,MF_FRAC,REGRID_FACTOR,R_S_NEW
 REAL(EB), ALLOCATABLE, TARGET, DIMENSION(:) :: CCS
 INTEGER,  ALLOCATABLE, DIMENSION(:) :: LAYER_INDEX,CELL_COUNT
 

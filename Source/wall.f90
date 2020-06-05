@@ -2436,13 +2436,13 @@ REAL(EB) :: DUMMY,DTMP,QDXKF,QDXKB,RR,RFACF,RFACB,RFACF2,RFACB2, &
             M_DOT_G_PP_ADJUST(N_TRACKED_SPECIES),M_DOT_G_PP_ACTUAL(N_TRACKED_SPECIES),&
             M_DOT_S_PPP(MAX_MATERIALS),M_DOT_S_PP(MAX_MATERIALS),GEOM_FACTOR,RHO_TEMP(MAX_MATERIALS),RHO_DOT_TEMP(MAX_MATERIALS),&
             DEL_DOT_Q_SC,Q_DOT_G_PPP,Q_DOT_O2_PPP,Q_DOT_G_PP,Q_DOT_O2_PP,R_SURF,U_SURF,V_SURF,W_SURF,T_BC_SUB,DT_BC_SUB,&
-            Q_NET_F,Q_NET_B,TMP_RATIO,KODXF,KODXB
+            Q_NET_F,Q_NET_B,TMP_RATIO,KODXF,KODXB,H_S,T_NODE,C_S,H_NODE,RHO_C_S(1:NWP_MAX),RHO_H_S(1:NWP_MAX),VOL
 REAL(EB), POINTER, DIMENSION(:) :: DELTA_TMP
-INTEGER :: IIB,JJB,KKB,IWB,NWP,KK,I,NR,NL,N,I_OBST,NS,N_LAYER_CELLS_NEW(MAX_LAYERS),N_CELLS,NN,EXPON
+INTEGER :: IIB,JJB,KKB,IWB,NWP,KK,I,NR,NL,N,I_OBST,NS,N_LAYER_CELLS_NEW(MAX_LAYERS),N_CELLS,EXPON,ITMP
 REAL(EB) :: SMALLEST_CELL_SIZE(MAX_LAYERS),THICKNESS
 REAL(EB),ALLOCATABLE,DIMENSION(:,:) :: INT_WGT
 INTEGER  :: NWP_NEW,I_GRAD,IZERO,SURF_INDEX,PART_INDEX=0
-LOGICAL :: REMESH,E_FOUND,CHANGE_THICKNESS
+LOGICAL :: REMESH,E_FOUND,CHANGE_THICKNESS,CONST_C(NWP_MAX)
 CHARACTER(MESSAGE_LENGTH) :: MESSAGE
 TYPE(WALL_TYPE), POINTER :: WALL_P
 
@@ -2452,6 +2452,8 @@ R_SURF=0._EB
 U_SURF=0._EB
 V_SURF=0._EB
 W_SURF=0._EB
+
+CONST_C = .TRUE.
 
 DELTA_TMP => CCS
 
@@ -2709,8 +2711,8 @@ PYROLYSIS_PREDICTED_IF: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
 
       ! Create a temporary array to hold the material component densities at the current depth layer, I
 
-      DO NN=1,SF%N_MATL
-         RHO_TEMP(NN) = ONE_D%MATL_COMP(NN)%RHO(I)
+      DO N=1,SF%N_MATL
+         RHO_TEMP(N) = ONE_D%MATL_COMP(N)%RHO(I)
       ENDDO
 
       RHO_S0 = SF%LAYER_DENSITY(LAYER_INDEX(I))
@@ -2720,8 +2722,8 @@ PYROLYSIS_PREDICTED_IF: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
                      M_DOT_G_PPP_ADJUST,M_DOT_G_PPP_ACTUAL,M_DOT_S_PPP,Q_S(I),Q_DOT_G_PPP,Q_DOT_O2_PPP,&
                      I_INDEX=I,R_DROP=R_SURF,LPU=U_SURF,LPV=V_SURF,LPW=W_SURF)
 
-      DO NN=1,SF%N_MATL
-         ONE_D%MATL_COMP(NN)%RHO_DOT(I) = RHO_DOT_TEMP(NN)
+      DO N=1,SF%N_MATL
+         ONE_D%MATL_COMP(N)%RHO_DOT(I) = RHO_DOT_TEMP(N)
       ENDDO
 
       ! Compute the mass flux of reaction gases at the surface
@@ -2881,7 +2883,12 @@ ENDIF
 
 REMESH = .FALSE.
 
-IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
+PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
+   
+   ! Convert Q_S to kW
+   DO I=1,NWP
+      Q_S(I) = Q_S(I)*(R_S(I-1)**I_GRAD-R_S(I)**I_GRAD)
+   ENDDO
 
    CHANGE_THICKNESS = .FALSE.
 
@@ -2906,7 +2913,6 @@ IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
          REGRID_MAX = MAX(REGRID_MAX,ONE_D%MATL_COMP(N)%RHO(I)/ML%RHO_S)
          REGRID_SUM = REGRID_SUM + ONE_D%MATL_COMP(N)%RHO(I)/ML%RHO_S
       ENDDO MATERIAL_LOOP1a
-
       IF (REGRID_SUM <= 1._EB) REGRID_FACTOR(I) = REGRID_SUM
       IF (REGRID_MAX >= ALMOST_ONE) REGRID_FACTOR(I) = REGRID_MAX
 
@@ -2944,7 +2950,6 @@ IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
    ENDDO POINT_LOOP2
 
    ! Compute new coordinates if the solid changes thickness. Save new coordinates in X_S_NEW.
-
    R_S_NEW(NWP) = 0._EB
    DO I=NWP-1,0,-1
       R_S_NEW(I) = ( R_S_NEW(I+1)**I_GRAD + (R_S(I)**I_GRAD-R_S(I+1)**I_GRAD)*REGRID_FACTOR(I+1) )**(1./REAL(I_GRAD,EB))
@@ -2955,6 +2960,31 @@ IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
       X_S_NEW(I) = R_S_NEW(0) - R_S_NEW(I)
       IF ((X_S_NEW(I)-X_S_NEW(I-1)) < TWO_EPSILON_EB) REMESH = .TRUE.
    ENDDO
+   
+   !If any nodes go to zero, apportion Q_S to surrounding nodes.
+   
+   IF (REMESH) THEN
+      IF (X_S_NEW(1)-X_S_NEW(0) < TWO_EPSILON_EB) Q_S(2) = Q_S(2) + Q_S(1)
+      IF (X_S_NEW(NWP)-X_S_NEW(NWP-1) < TWO_EPSILON_EB) Q_S(NWP-1) = Q_S(NWP-1) + Q_S(NWP)
+      DO I=2,NWP-1
+         IF (X_S_NEW(I) - X_S_NEW(I-1) < TWO_EPSILON_EB) THEN
+            N = 0
+            IF (X_S_NEW(I-1) - X_S_NEW(I-2) > TWO_EPSILON_EB) N=N+1
+            IF (X_S_NEW(I+1) - X_S_NEW(I) > TWO_EPSILON_EB) N=N+2
+            SELECT CASE (N)
+               CASE(1)
+                  Q_S(I-1) = Q_S(I-1) + Q_S(I)
+               CASE(2)
+                  Q_S(I+1) = Q_S(I+1) + Q_S(I) 
+               CASE(3)
+                  VOL = (R_S_NEW(I-1)**I_GRAD-R_S_NEW(I)**I_GRAD) / &
+                        ((R_S_NEW(I-1)**I_GRAD-R_S_NEW(I)**I_GRAD)+(R_S_NEW(I)**I_GRAD-R_S_NEW(I+1)**I_GRAD))
+                  Q_S(I-1) = Q_S(I-1) + Q_S(I) * VOL
+                  Q_S(I+1) = Q_S(I+1) + Q_S(I) * (1._EB-VOL)
+            END SELECT
+         ENDIF
+      ENDDO
+   ENDIF
 
    ! Re-generate grid for a wall changing thickness
 
@@ -2988,6 +3018,7 @@ IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
       ENDDO LAYER_LOOP
 
       ! Check that NWP_NEW has not exceeded the allocated space N_CELLS_MAX
+
       IF (NWP_NEW > SF%N_CELLS_MAX) THEN
          WRITE(MESSAGE,'(A,I5,A,A)') 'ERROR: N_CELLS_MAX should be at least ',NWP_NEW,' for surface ',TRIM(SF%ID)
          CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.)
@@ -3014,47 +3045,105 @@ IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
       ! Set up new node points following shrinking/swelling
 
       ONE_D%X(0:NWP) = X_S_NEW(0:NWP)
-      DO I=1,NWP
-         Q_S(I) = Q_S(I)*(R_S(I)**I_GRAD-R_S(I-1)**I_GRAD)
-      ENDDO
 
       X_S_NEW = 0._EB
-      IF (REMESH) THEN
+      REMESH_IF: IF (REMESH) THEN
+         
+         RHO_H_S = 0._EB
+         RHO_C_S = 0._EB
+
+         !Store wall enthalpy for later temperature extraction.
+
+         DO I=1,NWP
+            VOL = (THICKNESS+SF%INNER_RADIUS-ONE_D%X(I-1))**I_GRAD-(THICKNESS+SF%INNER_RADIUS-ONE_D%X(I))**I_GRAD
+            MATL_REMESH: DO N=1,SF%N_MATL
+               IF (ONE_D%MATL_COMP(N)%RHO(I)<=TWO_EPSILON_EB) CYCLE MATL_REMESH
+               ML  => MATERIAL(SF%MATL_INDEX(N))
+               ITMP = INT(ONE_D%TMP(I))
+               H_S = ML%H(ITMP)+(ONE_D%TMP(I)-REAL(ITMP,EB))*(ML%H(ITMP+1)-ML%H(ITMP))
+               RHO_H_S(I) = RHO_H_S(I) + ONE_D%MATL_COMP(N)%RHO(I) * H_S
+            ENDDO MATL_REMESH
+            RHO_H_S(I) = RHO_H_S(I) * VOL
+            DO N=1,SF%N_MATL
+               ONE_D%MATL_COMP(N)%RHO(I) = ONE_D%MATL_COMP(N)%RHO(I) * VOL
+            ENDDO
+            RHO_C_S(I) = RHO_H_S(I) / ONE_D%TMP(I)
+         ENDDO
+
          CALL GET_WALL_NODE_COORDINATES(NWP_NEW,SF%N_LAYERS,N_LAYER_CELLS_NEW, &
             SMALLEST_CELL_SIZE(1:SF%N_LAYERS),SF%STRETCH_FACTOR(1:SF%N_LAYERS),X_S_NEW(0:NWP_NEW))
          CALL GET_WALL_NODE_WEIGHTS(NWP_NEW,SF%N_LAYERS,N_LAYER_CELLS_NEW,ONE_D%LAYER_THICKNESS,SF%GEOMETRY, &
             X_S_NEW(0:NWP_NEW),LAYER_DIVIDE,DX_S(1:NWP_NEW),RDX_S(0:NWP_NEW+1),RDXN_S(0:NWP_NEW),&
             DX_WGT_S(0:NWP_NEW),DXF,DXB,LAYER_INDEX(0:NWP_NEW+1),MF_FRAC(1:NWP_NEW),SF%INNER_RADIUS)
+
          ! Interpolate densities and temperature from old grid to new grid
+
          ALLOCATE(INT_WGT(NWP_NEW,NWP),STAT=IZERO)
-         CALL GET_INTERPOLATION_WEIGHTS(SF%N_LAYERS,NWP,NWP_NEW,ONE_D%N_LAYER_CELLS,N_LAYER_CELLS_NEW, &
-                                    ONE_D%X(0:NWP),X_S_NEW(0:NWP_NEW),INT_WGT)
+         CALL GET_INTERPOLATION_WEIGHTS(SF%GEOMETRY,NWP,NWP_NEW,SF%INNER_RADIUS,ONE_D%X(0:NWP),X_S_NEW(0:NWP_NEW),INT_WGT)
          N_CELLS = MAX(NWP,NWP_NEW)
-         CALL INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,ONE_D%TMP(1:N_CELLS))
-         ONE_D%TMP(0) = 2._EB*ONE_D%TMP_F-ONE_D%TMP(1) !Make sure surface temperature stays the same
-         ONE_D%TMP(NWP_NEW+1) = ONE_D%TMP(NWP+1)
+
          CALL INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,Q_S(1:N_CELLS))
+         CALL INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,RHO_H_S(1:N_CELLS))
+         CALL INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,RHO_C_S(1:N_CELLS))
+
          DO N=1,SF%N_MATL
             ML  => MATERIAL(SF%MATL_INDEX(N))
             CALL INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,ONE_D%MATL_COMP(N)%RHO(1:N_CELLS))
+            DO I=1,NWP_NEW
+               IF (ONE_D%MATL_COMP(N)%RHO(I)>0._EB .AND. MATERIAL(SF%MATL_INDEX(N))%C_S<=0._EB) CONST_C(I) = .FALSE.
+            ENDDO
          ENDDO
+
          DEALLOCATE(INT_WGT)
+
+         ! Extract temperature
+         DO I=1,NWP_NEW
+            H_NODE = RHO_H_S(I)
+            T_NODE = H_NODE/RHO_C_S(I)
+            IF (.NOT. CONST_C(I)) THEN
+               T_SEARCH: DO
+                  C_S = 0._EB
+                  H_S = 0._EB
+                  ITMP = INT(T_NODE)
+                  H_S = 0._EB
+                  T_S: DO N=1,SF%N_MATL
+                     IF (ONE_D%MATL_COMP(N)%RHO(I)<=0._EB) CYCLE T_S
+                     ML  => MATERIAL(SF%MATL_INDEX(N))
+                     H_S = H_S + (ML%H(ITMP)+(T_NODE-REAL(ITMP,EB))*(ML%H(ITMP+1)-ML%H(ITMP)))*ONE_D%MATL_COMP(N)%RHO(I)
+                  ENDDO T_S
+                  C_S = H_S/T_NODE
+                  ONE_D%TMP(I) = T_NODE + (H_NODE - H_S)/C_S
+                  IF (ABS(ONE_D%TMP(I) - T_NODE) < 0.0001_EB) EXIT T_SEARCH
+                  T_NODE = ONE_D%TMP(I)
+               ENDDO T_SEARCH
+            ELSE
+               ONE_D%TMP(I)=T_NODE
+            ENDIF
+            DO N=1,SF%N_MATL
+               ONE_D%MATL_COMP(N)%RHO(I) = ONE_D%MATL_COMP(N)%RHO(I) /&
+                  ((SF%INNER_RADIUS+X_S_NEW(NWP_NEW)-X_S_NEW(I-1))**I_GRAD-(SF%INNER_RADIUS+X_S_NEW(NWP_NEW)-X_S_NEW(I))**I_GRAD)
+            ENDDO
+         ENDDO         
+
+         ONE_D%TMP(0)         = 2._EB*ONE_D%TMP_F-ONE_D%TMP(1)   !Make sure front surface temperature stays the same
+         ONE_D%TMP(NWP_NEW+1) = 2._EB*ONE_D%TMP_B-ONE_D%TMP(NWP_NEW) !Make sure back surface temperature stays the same
+
          ONE_D%N_LAYER_CELLS(1:SF%N_LAYERS) = N_LAYER_CELLS_NEW(1:SF%N_LAYERS)
          NWP = NWP_NEW
          ONE_D%X(0:NWP) = X_S_NEW(0:NWP)      ! Note: X(NWP+1...) are not set to zero.
-      ELSE
+      ELSE REMESH_IF
          CALL GET_WALL_NODE_WEIGHTS(NWP,SF%N_LAYERS,N_LAYER_CELLS_NEW,ONE_D%LAYER_THICKNESS(1:SF%N_LAYERS),SF%GEOMETRY, &
             ONE_D%X(0:NWP),LAYER_DIVIDE,DX_S(1:NWP),RDX_S(0:NWP+1),RDXN_S(0:NWP),DX_WGT_S(0:NWP),DXF,DXB, &
             LAYER_INDEX(0:NWP+1),MF_FRAC(1:NWP),SF%INNER_RADIUS)
-      ENDIF
-      R_S(0) = SF%INNER_RADIUS + ONE_D%X(NWP) - ONE_D%X(0)
-      DO I=1,NWP
-         R_S(I) = SF%INNER_RADIUS + ONE_D%X(NWP) - ONE_D%X(I)
-         Q_S(I) = Q_S(I)/(R_S(I)**I_GRAD-R_S(I-1)**I_GRAD)
-      ENDDO
+      ENDIF REMESH_IF
    ENDIF REMESH_GRID
 
-ENDIF
+   ! Convert Q_S back to kW/m^3
+   DO I=1,NWP
+      Q_S(I) = Q_S(I)/((SF%INNER_RADIUS+ONE_D%X(NWP)-ONE_D%X(I-1))**I_GRAD-(SF%INNER_RADIUS+ONE_D%X(NWP)-ONE_D%X(I))**I_GRAD)
+   ENDDO
+
+ENDIF PYROLYSIS_PREDICTED_IF_2
 
 ! Calculate thermal properties
 
@@ -3107,7 +3196,6 @@ DO I=1,NWP-1
    ONE_D%K_S(I)  = 1._EB / ( DX_WGT_S(I)/ONE_D%K_S(I) + (1._EB-DX_WGT_S(I))/ONE_D%K_S(I+1) )
 ENDDO
 
-
 ! Update the 1-D heat transfer equation
 
 KODXF = ONE_D%K_S(0)/DXF
@@ -3123,22 +3211,20 @@ DO I=1,NWP
             + DT_BC_SUB*Q_S(I)/ONE_D%RHO_C_S(I)
 ENDDO
 IF ( .NOT.RADIATION .OR. SF%INTERNAL_RADIATION ) THEN
-   RFACF = 0.25_EB*HTCF
-   RFACB = 0.25_EB*HTCB
+   RFACF = 0.5_EB*HTCF
+   RFACB = 0.5_EB*HTCB
 ELSE
-   RFACF = 0.25_EB*HTCF + 2._EB*ONE_D%EMISSIVITY*SIGMA*ONE_D%TMP_F**3
-   RFACB = 0.25_EB*HTCB + 2._EB*E_WALLB*SIGMA*ONE_D%TMP_B**3
+   RFACF = 0.5_EB*HTCF + 2._EB*ONE_D%EMISSIVITY*SIGMA*ONE_D%TMP_F**3
+   RFACB = 0.5_EB*HTCB + 2._EB*E_WALLB*SIGMA*ONE_D%TMP_B**3
 ENDIF
 RFACF2 = (KODXF-RFACF)/(KODXF+RFACF)
 RFACB2 = (KODXB-RFACB)/(KODXB+RFACB)
 IF ( .NOT.RADIATION .OR. SF%INTERNAL_RADIATION ) THEN
-   QDXKF = (HTCF*(ONE_D%TMP_G - 0.5_EB*ONE_D%TMP_F) + Q_WATER_F)/(KODXF+RFACF)
-   QDXKB = (HTCB*(   TMP_BACK - 0.5_EB*ONE_D%TMP_B) + Q_WATER_B)/(KODXB+RFACB)
+   QDXKF = (HTCF*ONE_D%TMP_G + Q_WATER_F)/(KODXF+RFACF)
+   QDXKB = (HTCB*TMP_BACK    + Q_WATER_B)/(KODXB+RFACB)
 ELSE
-   QDXKF = (HTCF*(ONE_D%TMP_G - 0.5_EB*ONE_D%TMP_F) + ONE_D%Q_RAD_IN + &
-           3._EB*ONE_D%EMISSIVITY*SIGMA*ONE_D%TMP_F**4 + Q_WATER_F) /(KODXF+RFACF)
-   QDXKB = (HTCB*(TMP_BACK - 0.5_EB*ONE_D%TMP_B) + Q_RAD_IN_B + 3._EB*E_WALLB*SIGMA*ONE_D%TMP_B**4 + Q_WATER_B) &
-           /(KODXB+RFACB)
+   QDXKF = (HTCF*ONE_D%TMP_G + Q_WATER_F + ONE_D%Q_RAD_IN + 3._EB*ONE_D%EMISSIVITY*SIGMA*ONE_D%TMP_F**4) / (KODXF+RFACF)
+   QDXKB = (HTCB*TMP_BACK    + Q_WATER_B + Q_RAD_IN_B     + 3._EB*E_WALLB*SIGMA*ONE_D%TMP_B**4         ) / (KODXB+RFACB)
 ENDIF
 CCS(1)   = CCS(1)   - BBS(1)  *QDXKF
 CCS(NWP) = CCS(NWP) - AAS(NWP)*QDXKB
@@ -3186,6 +3272,7 @@ ENDDO SUB_TIMESTEP_LOOP
 
 ONE_D%Q_CON_F = ONE_D%Q_CON_F / DT_BC
 DTMP = ONE_D%TMP_G-0.5_EB*(ONE_D%TMP_F_OLD+ONE_D%TMP_F)
+
 IF (ABS(DTMP)>TWO_EPSILON_EB .AND. ABS(ONE_D%Q_CON_F)>TWO_EPSILON_EB) THEN
    ONE_D%HEAT_TRANS_COEF = ONE_D%Q_CON_F/DTMP
 ELSE
@@ -3407,6 +3494,7 @@ MATERIAL_LOOP: DO N=1,N_MATS  ! Tech Guide: Sum over the materials, alpha
 
             ! Reaction rate in 1/s (Tech Guide: r_alpha_beta)
             REACTION_RATE = ML%A(J)*(RHO_S(N)/RHO_S0)**ML%N_S(J)*EXP(-ML%E(J)/(R0*TMP_S))
+
             ! power term
             DTMP = ML%THR_SIGN(J)*(TMP_S-ML%TMP_THR(J))
             IF (ABS(ML%N_T(J))>=TWO_EPSILON_EB) THEN
