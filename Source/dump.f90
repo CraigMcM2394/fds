@@ -1501,7 +1501,7 @@ WRITE(LU_SMV,'(1X,A)')  TRIM(TITLE)
 
 ! Indentify as terrain case
 
-IF (TERRAIN_CASE .OR. VEG_LEVEL_SET) THEN
+IF (TERRAIN_CASE .OR. LEVEL_SET_MODE>0) THEN
    WRITE(LU_SMV,'(/A)') 'AUTOTERRAIN'
    WRITE(LU_SMV,'(I3)') 1
    WRITE(LU_SMV,'(1X,A)') TRIM(TERRAIN_IMAGE(1))
@@ -5828,14 +5828,13 @@ QUANTITY_LOOP: DO IQ=1,NQT
          NY = J2 + 1 - J1
          NZ = K2 + 1 - K1
          IF(SL%MULTI_RES.AND.NX*NY*NZ.GT.0) THEN
-!    #define IJK(i,j,k) ((i)*ny*nz + (j)*nz +(k)) how C/C++ expects to see the data (PACK doesn't work)
             ALLOCATE(QQ_PACK(NX*NY*NZ))
             DO K = K1, K2
-               KFACT = (K-K1)
+               KFACT = NX*NY*(K-K1)
                DO J = J1, J2
-                  JFACT = (J-J1)*NZ
+                  JFACT = (J-J1)*NX
                   DO I = I1, I2
-                     IFACT = (I - I1)*NY*NZ
+                     IFACT = (I - I1)
                      QQ_PACK(1+IFACT+JFACT+KFACT) = QQ(I,J,K,1)
                   ENDDO
                ENDDO
@@ -7883,6 +7882,13 @@ IND_SELECT: SELECT CASE(IND)
          GAS_PHASE_OUTPUT_RES = DCOR(II,JJ,KK)
       ELSE
          GAS_PHASE_OUTPUT_RES = 0._EB
+      ENDIF
+   CASE(538)  ! PYRO3D IOR
+      GAS_PHASE_OUTPUT_RES = -999
+      OB => OBSTRUCTION(OBST_INDEX_C(CELL_INDEX(II,JJ,KK)))
+      IF (WALL_INDEX_HT3D(CELL_INDEX(II,JJ,KK),OB%PYRO3D_IOR)>0) THEN
+         WC => WALL(WALL_INDEX_HT3D(CELL_INDEX(II,JJ,KK),OB%PYRO3D_IOR))
+         GAS_PHASE_OUTPUT_RES = WC%ONE_D%IOR
       ENDIF
 
 END SELECT IND_SELECT

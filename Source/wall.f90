@@ -42,6 +42,7 @@ REAL(EB), INTENT(IN) :: T,DT
 INTEGER, INTENT(IN) :: NM
 
 IF (EVACUATION_ONLY(NM)) RETURN
+IF (LEVEL_SET_MODE==1 .OR. LEVEL_SET_MODE==2 .OR. LEVEL_SET_MODE==3) RETURN
 
 TNOW=CURRENT_TIME()
 
@@ -91,8 +92,6 @@ INTEGER, INTENT(IN) :: NM
 REAL(EB), POINTER, DIMENSION(:,:) :: PBAR_P
 REAL(EB), POINTER, DIMENSION(:,:,:) :: UU=>NULL(),VV=>NULL(),WW=>NULL(),RHOP=>NULL(),OM_RHOP=>NULL(),OM_TMP=>NULL()
 REAL(EB), POINTER, DIMENSION(:,:,:,:) :: ZZP=>NULL()
-
-IF (.NOT.LEVEL_SET_COUPLED) RETURN
 
 IF (PREDICTOR) THEN
    UU => US
@@ -1192,7 +1191,8 @@ INIT_IF: IF (T_LOC<TWO_EPSILON_EB) THEN
                         WC%ONE_D%M_DOT_S_PP(1:SF%N_MATL) = 0._EB
                      ENDIF
                   CASE(0)
-                     DO IOR=-3,3
+                     IOR_LOOP: DO IOR=-3,3
+                        IF (IOR==0) CYCLE IOR_LOOP
                         IF (WALL_INDEX_HT3D(IC,IOR)>0) THEN
                            WC=>WALL(WALL_INDEX_HT3D(IC,IOR))
                            SF=>SURFACE(WC%SURF_INDEX)
@@ -1200,7 +1200,7 @@ INIT_IF: IF (T_LOC<TWO_EPSILON_EB) THEN
                            WC%ONE_D%M_DOT_G_PP_ACTUAL(1:N_TRACKED_SPECIES) = 0._EB
                            WC%ONE_D%M_DOT_S_PP(1:SF%N_MATL) = 0._EB
                         ENDIF
-                     ENDDO
+                     ENDDO IOR_LOOP
                END SELECT IOR_SELECT
             ENDDO I_LOOP
          ENDDO
@@ -1860,8 +1860,6 @@ INTEGER :: II,JJ,KK,IIG,JJG,KKG,IW,IC,ICG,ICF,NS,IP,I_FUEL,SPECIES_BC_INDEX
 REAL(EB), POINTER, DIMENSION(:,:) :: PBAR_P=>NULL()
 REAL(EB), POINTER, DIMENSION(:,:,:,:) :: ZZP=>NULL()
 
-IF (.NOT.LEVEL_SET_COUPLED) RETURN
-
 IF (PREDICTOR) THEN
    PBAR_P => PBAR_S
    ZZP => ZZS
@@ -2260,8 +2258,6 @@ REAL(EB) :: ZZ_GET(1:N_TRACKED_SPECIES),RSUM_F,UN_P
 INTEGER  :: IW,BOUNDARY_TYPE,KK,ICF
 REAL(EB), POINTER, DIMENSION(:,:) :: PBAR_P=>NULL()
 REAL(EB), POINTER, DIMENSION(:,:,:) :: RHOP=>NULL()
-
-IF (.NOT.LEVEL_SET_COUPLED) RETURN
 
 IF (PREDICTOR) THEN
    PBAR_P => PBAR_S
@@ -2884,7 +2880,7 @@ ENDIF
 REMESH = .FALSE.
 
 PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
-   
+
    ! Convert Q_S to kW
    DO I=1,NWP
       Q_S(I) = Q_S(I)*(R_S(I-1)**I_GRAD-R_S(I)**I_GRAD)
@@ -2960,9 +2956,9 @@ PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
       X_S_NEW(I) = R_S_NEW(0) - R_S_NEW(I)
       IF ((X_S_NEW(I)-X_S_NEW(I-1)) < TWO_EPSILON_EB) REMESH = .TRUE.
    ENDDO
-   
+
    !If any nodes go to zero, apportion Q_S to surrounding nodes.
-   
+
    IF (REMESH) THEN
       IF (X_S_NEW(1)-X_S_NEW(0) < TWO_EPSILON_EB) Q_S(2) = Q_S(2) + Q_S(1)
       IF (X_S_NEW(NWP)-X_S_NEW(NWP-1) < TWO_EPSILON_EB) Q_S(NWP-1) = Q_S(NWP-1) + Q_S(NWP)
@@ -2975,7 +2971,7 @@ PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
                CASE(1)
                   Q_S(I-1) = Q_S(I-1) + Q_S(I)
                CASE(2)
-                  Q_S(I+1) = Q_S(I+1) + Q_S(I) 
+                  Q_S(I+1) = Q_S(I+1) + Q_S(I)
                CASE(3)
                   VOL = (R_S_NEW(I-1)**I_GRAD-R_S_NEW(I)**I_GRAD) / &
                         ((R_S_NEW(I-1)**I_GRAD-R_S_NEW(I)**I_GRAD)+(R_S_NEW(I)**I_GRAD-R_S_NEW(I+1)**I_GRAD))
@@ -3048,7 +3044,7 @@ PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
 
       X_S_NEW = 0._EB
       REMESH_IF: IF (REMESH) THEN
-         
+
          RHO_H_S = 0._EB
          RHO_C_S = 0._EB
 
@@ -3123,7 +3119,7 @@ PYROLYSIS_PREDICTED_IF_2: IF (SF%PYROLYSIS_MODEL==PYROLYSIS_PREDICTED) THEN
                ONE_D%MATL_COMP(N)%RHO(I) = ONE_D%MATL_COMP(N)%RHO(I) /&
                   ((SF%INNER_RADIUS+X_S_NEW(NWP_NEW)-X_S_NEW(I-1))**I_GRAD-(SF%INNER_RADIUS+X_S_NEW(NWP_NEW)-X_S_NEW(I))**I_GRAD)
             ENDDO
-         ENDDO         
+         ENDDO
 
          ONE_D%TMP(0)         = 2._EB*ONE_D%TMP_F-ONE_D%TMP(1)   !Make sure front surface temperature stays the same
          ONE_D%TMP(NWP_NEW+1) = 2._EB*ONE_D%TMP_B-ONE_D%TMP(NWP_NEW) !Make sure back surface temperature stays the same
