@@ -2167,8 +2167,17 @@ In order for species mass fractions to be physically realizable they must all be
 \label{fig:realizable_mass_fractions}
 \end{figure}
 
+\subsection{Integral Mass Test for Complex Geometry (\texorpdfstring{\textct{geom\_mass\_file\_test}}{geom\_mass\_file\_test})}
+\label{geom_mass_file_test}
 
+A 1 m$^3$ box contains AIR at ambient conditions and has a sphere of radius 0.5 m leaving a volume of 0.4764 $m^3$.  The FDS {\ct MASS\_FILE} output is tested to ensure the correct cut cell volumes are being computed and the primitive species for AIR are correctly output.  The results are shown below in Fig.~\ref{fig:geom_mass_file_test}.
 
+\begin{figure}[ht]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/geom_mass_file_test}
+\caption[The \textct{geom\_mass\_file\_test} test case]{Results of the \textct{geom\_mass\_file\_test} test case.}
+\label{fig:geom_mass_file_test}
+\end{figure}
 
 \section{Energy Conservation}
 
@@ -4793,6 +4802,18 @@ This case is a 3D version of the {\ct FAA\_Polymers\_PMMA} validation case.  A b
     \label{fig:pyro3d_transport}
 \end{figure}
 
+\section{Cone Data Extrapolation Model (\texorpdfstring{\textct{cone\_demo\_2}}{cone\_demo\_2})}
+\label{cone_demo_2}
+
+This section tests a model for extrapolating heat release rate data from a cone calorimeter to heat fluxes other than the one used during the cone test. In the case a surface is assigned an {\ct HRRPUA} and {\ct RAMP\_Q} from a cone test performed at 50~\si{kW/m^2}. The surface is given an {\ct IGNITION\_TEMPERATURE} of 0~$^\circ$C so it ignites immediately. The surface is exposed to a sawtooth {\ct EXTERNAL\_FLUX} that varies between 10~\si{kW/m^2} and 110~\si{kW/m^2}. The results are shown below in Fig~\ref{fig:cone_demo_2}.
+
+\begin{figure}[!ht]
+	\centering
+	\includegraphics[height=2.2in]{SCRIPT_FIGURES/cone_demo_2}
+	\caption[Cone data extrapolation model (the {\ct cone\_demo\_2} case)]{Check of the cone data extrapolation model.}
+	\label{fig:cone_demo_2}
+\end{figure}
+
 \chapter{Lagrangian Particles}
 
 This chapter contains verification cases that test all aspects of particles, droplets, sprays, and so on. Note that in FDS, Lagrangian particles are used for a variety of purposes, not just water droplets.
@@ -5523,7 +5544,7 @@ The solution is that $\Delta p=344.16$~Pa, as shown in Fig.~\ref{fig_leak_test_4
 
 \begin{figure}[ht]
   \centering
-      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/leak_test_4} } 
+      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/leak_test_4} }
    \caption[The \textct{leak\_test\_4} test case]{Pressure rise in a compartment constructed of immersed boundary obstructions.}
    \label{fig_leak_test_4}
 \end{figure}
@@ -5715,8 +5736,8 @@ h_{\mbox{\tiny CFD}} = c_p \frac{V(T_{\mbox{\tiny left}}}{2} \rho_{\mbox{\tiny l
 \end{figure}
 
 
-
 % Unstructured geometry verification tests:
+
 \ifcompgeom
 
 \chapter{Unstructured Geometry}
@@ -6289,7 +6310,6 @@ There is more noise on the fixed geometry case $h=\Delta z_{10}/11$, because the
 \subsection{Conservation test of isothermal helium plume around sphere}
 
 
-
 \section{Geometry tests involving heat and mass transfer}
 
 
@@ -6329,12 +6349,7 @@ as shown in Fig.~\ref{sphere_leak_fig}.
 
 \section{Geometry tests involving fire}
 
-
-
 \fi
-
-
-
 
 
 \chapter{Outputs}
@@ -6446,7 +6461,7 @@ Fires                   & \ref{UG-spray_burner}           & spray\_burner.fds   
 Heat\_Transfer          & \ref{heat_conduction_kc}        & heat\_conduction\_kc.fds                   & heat\_conduction\_kc\_devc.csv                   & heat\_conduction\_kc.csv \\ \hline
 HVAC                    & \ref{ashrae7}                   & ashrae7\_table.fds                         & ashrae7\_table\_devc.csv                         & ashrae7\_exp.csv \\ \hline
 Pressure\_Solver        & \ref{UG-duct_flow}              & duct\_flow.fds                             & duct\_flow\_devc.csv                             & duct\_flow.csv \\ \hline
-Pressure\_Solver        & \ref{UG-duct_flow}              & duct\_flow\_uglmat.fds           & duct\_flow\_uglmat\_devc.csv                    & duct\_flow.csv \\ \hline
+Pressure\_Solver        & \ref{UG-duct_flow}              & duct\_flow\_uglmat.fds                     & duct\_flow\_uglmat\_devc.csv                     & duct\_flow.csv \\ \hline
 Pyrolysis               & \ref{enthalpy}                  & enthalpy.fds                               & enthalpy\_devc.csv                               & enthalpy.csv \\ \hline
 Pyrolysis               & \ref{shrink_swell}              & shrink\_swell.fds                          & shrink\_swell\_devc.csv                          & shrink\_swell.csv \\ \hline
 Radiation               & \ref{radiation_shield}          & radiation\_shield.fds                      & radiation\_shield\_devc.csv                      & radiation\_shield.csv \\ \hline
@@ -6459,6 +6474,7 @@ Sprinklers\_and\_Sprays & \ref{particle_drag}             & particle\_drag\_U50\
 \end{landscape}
 
 % Unstructured geometry Appendix:
+
 \ifcompgeom
 
 \chapter{Unstructured Geometry integral conservation tests}
@@ -6545,9 +6561,7 @@ Three geometry conservation tests can be defined for the polyhedra definition ar
 
 \end{enumerate}
 
-
-
-
 \fi
+
 
 \end{document}
