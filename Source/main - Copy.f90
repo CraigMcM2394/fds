@@ -60,6 +60,7 @@ LOGICAL, ALLOCATABLE, DIMENSION(:) ::  STATE_GLB,STATE_LOC
 INTEGER :: NOM,IWW,IW,ITER
 TYPE (MESH_TYPE), POINTER :: M,M4
 TYPE (OMESH_TYPE), POINTER :: M2,M3,M5
+LOGICAL :: APPEND_GS =.FALSE.  ! allow time history to be added to from restarted file
 LOGICAL :: TIMEHIST = .FALSE.  ! allow time history to be taken for GeniSTELA
 CHARACTER(80) :: CSVHFMT  ! header format for GENISTELA temperature output
 
@@ -529,6 +530,10 @@ T_USED(1) = WALL_CLOCK_START_ITERATIONS
 ALLOCATE (LU_GSTH(NMESHES))
 ALLOCATE (FN_GSTH(NMESHES))  ! allocate sizes for time histories outside time loop
 
+! IF(RESTART .AND. RESTART_CHID == CHID) THEN
+! APPEND_GS =.TRUE.  ! time history should not overwrite for restarted file
+! ENDIF
+
 ! This ends the initialization part of the program
 
 INITIALIZATION_PHASE = .FALSE.
@@ -896,15 +901,19 @@ MAIN_LOOP: DO
    
    EVAL_TMP_STEEL: DO NM=1,NMESHES
    IF (EVACUATION_SKIP(NM)) CYCLE  EVAL_TMP_STEEL  ! do not check for GENISTELA in evacuation model
-   ! not checking the first time-step(ICYC==1)
+   ! IF (MOD(MESHES(NM)%RAD_CALL_COUNTER,TIME_STEP_INCREMENT)==0 .OR. ICYC==1) THEN
    IF (MOD(MESHES(NM)%RAD_CALL_COUNTER,TIME_STEP_INCREMENT)==0 .AND. MOD(MESHES(NM)%RAD_CALL_COUNTER,ANGLE_INCREMENT)==0) THEN
    LU_GSTA(NM) = GET_FILE_NUMBER()  ! find available logical unit for writing output
    WRITE(FN_GSTA(NM),'(A,A,I3.3,A)') TRIM(CHID),'_',NM,'_gsta.csv'  ! write an output file for each mesh 
-   OPEN(LU_GSTA(NM),FILE=FN_GSTA(NM),FORM='FORMATTED',STATUS='REPLACE')
-   WRITE(CSVHFMT,'(A,I5.1,A)') "(",7,"(A,','),A)" ! use this to set style for N character-string headings
-   WRITE(LU_GSTA(NM),CSVHFMT) 'm','m','m','K','K','K','s'
-   WRITE(LU_GSTA(NM),CSVHFMT) 'I','J','K','STEEL TEMP','PROT1 TEMP','PROT2 TEMP','TIME'  
-
+   OPEN(LU_GSTA(NM),FILE=FN_GSTA,FORM='FORMATTED',STATUS='REPLACE')
+   WRITE(CSVHFMT,'(A,I5.1,A)') "(",11,"(A,','),A)" ! use this to set style for lines to follow- 6 character-string headings
+   WRITE(LU_GSTA(NM),CSVHFMT) 'm','m','m','K','K','K','s','J/kg/K','W/m2/K','kg/m/s','-'
+   WRITE(LU_GSTA(NM),CSVHFMT) 'I','J','K','STEEL TEMP','PROT1 TEMP','PROT2 TEMP','TIME',&
+   'SHC_GAS','H_C EFF','VISC_DYN','NU_NO'
+   ! ,'VMEAN','VISC_DYN','VISC_KIN','RE_NO','GR_NO','NU_NO'
+   
+   ! IF (APPEND_GS) THEN 
+   ! OPEN(LU_GSTH(NM),FILE=FN_GSTH(NM),FORM='FORMATTED',STATUS='OLD',POSITION='APPEND')
    
    IF (TIMEHIST) THEN
    OPEN(LU_GSTH(NM),FILE=FN_GSTH(NM),FORM='FORMATTED',STATUS='OLD')
@@ -913,16 +922,9 @@ MAIN_LOOP: DO
    LU_GSTH(NM) = GET_FILE_NUMBER()
    WRITE(FN_GSTH(NM),'(A,A,I3.3,A)') TRIM(CHID),'_',NM,'_gsth.csv'
    OPEN(LU_GSTH(NM),FILE=FN_GSTH,FORM='FORMATTED',STATUS='REPLACE')
-   WRITE(CSVHFMT,'(A,I5.1,A)') "(",46,"(A,','),A)" ! use this to set style for N character-string headings
-   WRITE(LU_GSTH(NM),CSVHFMT) 's','s','K','K','K','m','m','m',&
-   'K','m/s','m/s','m/s','kg/m3','J/kgK','W/m2','W/m2','m/s','N/m2s','','','','W/m2K',&
-   '','W/mK','J/kgK','kg/m3','','K','J/kgK','','','','','',&
-   '','W/mK','J/kgK','kg/m3','','K','J/kgK','','','','',''  
-   WRITE(LU_GSTH(NM),CSVHFMT) 'TIME','TIMESTEP','STEEL TEMP','PROT1 TEMP','PROT2 TEMP','IPOS','JPOS','KPOS',&
-   'GAS TMP','U','V','W','RHO_GAS','SHC_GAS','RADSUM','Q_RAD','VEL_MEAN','VISC_DYN','RE_NO','GR_NO','NU_NO','HTC_EFF',&
-   'N_ITR','K_INT','SHC_INT','RHO_INT','WF_INT','TMP_SURF_INT','SHC_STEEL_INT','RK1_D','RK1_N','RK1_TRN','RK1F','RK1',&
-   'N_ITR','K_P','SHC_P','RHO_P','WF','TMP_SURF','SHC_STEEL','RK2_D','RK2_N','RK2_TRN','RK2F','RK2'
-   
+   WRITE(CSVHFMT,'(A,I5.1,A)') "(",8,"(A,','),A)" ! use this to set style for lines to follow- 6 character-string headings
+   WRITE(LU_GSTH(NM),CSVHFMT) 's','s','K','K','K','m','m','m'
+   WRITE(LU_GSTH(NM),CSVHFMT) 'TIME','TIMESTEP','STEEL TEMP','PROT1 TEMP','PROT2 TEMP','IPOS','JPOS','KPOS'
    TIMEHIST = .TRUE.
    
    ENDIF
@@ -1028,6 +1030,7 @@ CONTAINS
 
 SUBROUTINE GENISTELA(T,DT, NM)
 !! MAIN BODY OF CALCULATION PROCEDURE TO FIND STEEL AND PROTECTIVE LAYER TEMPERATURES FOR GENERIC MEMBER SUBJECT TO NATURAL FIRE
+!**CONFIRM WHETHER TEMPERATURES IN K OR DEGC- FDS READS IN TEMPERATURES IN CELSIUS, SO CHECK WHERE IT USES CONVERSIONS**
 
 !---------------------------------------INITIALISATION OF VALUES------------------------------------------------------------------!
 USE RADCONS, ONLY : TIME_STEP_INCREMENT ! include TSI for GENISTELA activation
@@ -1041,7 +1044,7 @@ TYPE (MESH_TYPE), POINTER :: M  ! re-define pointer
 INTEGER ::  I_GS, J_GS, K_GS
 INTEGER, POINTER :: NX, NY, NZ  ! positional counters and number of cells respectively
 
-LOGICAL :: VERTICAL, SOLIDSECTION, CORRECTION, CORREND, CORRJUNC, AXIAL_LT
+LOGICAL :: VERTICAL, SOLIDSECTION, CORRECTION, CORREND, CORRJUNC
 
 ! CONTROL VARIABLES FOR NEWTON-RAPHSON AND RUNGE-KUTTA
 REAL(EB) :: DT_GS
@@ -1052,22 +1055,23 @@ RK_1ST_NET1,RK_1ST_NET2,RK_1ST_NET,RK_1ST_TRNS1,RK_1ST_TRNS2,RK_1ST_TRNS,RK_1STF
 RK_2ND_DENOM2,RK_2ND_NET1,RK_2ND_NET2,RK_2ND_NET,RK_2ND_TRNS1,RK_2ND_TRNS2,RK_2ND_TRNS,RK_2ND_AX_NET,RK_2NDF,RK_2NDF_AX
 INTEGER :: NR_ITER, IRNK
 
+!**DON'T NEED F.T.FLAG?**
 
 ! TEMPERATURE VARIABLES (including outputs)
 REAL(EB) :: TMP_MBR0, TMP_SURF1, TMP_SURF2,  TMP_STEEL, TMP_STEEL_OLD,TMP_STEEL_AX, TMP_INVRAD, TMP_INVRAD_U, TMP_INVRAD_L, &
-TMP_INSU, TMP_STEEL_MID, TMP_UPLIM, TMP_S_END, TMP_S_JUNC,TMP_GAS1, TMP_GAS2,TMP_INT_SURF1,TMP_INT_SURF2,TMP_GAS_UP,TMP_GAS_LOW
-
+TMP_INSU, TMP_STEEL_MID, TMP_UPLIM, TMP_S_END, TMP_S_JUNC,TMP_GAS1, TMP_GAS2,TMP_INT_SURF1,TMP_INT_SURF2
 REAL(EB), ALLOCATABLE, DIMENSION(:,:,:) :: STEEL_TMP, PRT1_TMP, PRT2_TMP
 REAL(EB), DIMENSION(2,ITER_MAX) :: TMP_SURF
 REAL(EB), DIMENSION(2,ITER_MAX) :: TMP_INT_SURF
+!**check frequency of 4th power of temperature call, and what temperature it is...
 
 ! GEOMETRY PARAMETERS
 REAL(EB), PARAMETER :: L_MBR=2.95_EB, THK_FL=0.0142_EB, THK_WEB=0.0086_EB, WD_FL=0.254_EB, WD_WEB=0.254_EB
 !  WD_MBR, H_MBR would be included here if they were used 
 
-! GAS VARIABLES
-REAL(EB) :: RADSUM, SHC_GAS ! allows potential matches for these to be tested from same label
-! TMP, U, V, W, RHO can be called as they are from the mesh
+! ARGUMENTS (should be defined elsewhere, consider if re-labelling required)
+REAL(EB) :: RADSUM, SHC_GAS ! call as individual value from array, not as array itself
+! TMP, U, V, W, RHO already taken from mesh, chose not to rename
 ! REAL(EB) :: EPS_XP, EPS_YP, EPS_ZP, ETA_XP, ETA_YP, ETA_ZP, PSI_XP, PSI_YP, PSI_ZP ! cell face projections for non-orthogonal
 
 ! PROPERTIES FOR ENERGY BALANCE EQUATIONS
@@ -1084,33 +1088,28 @@ REAL(EB) :: THM_PEN_DEPTH1, THM_PEN_DEPTH2
 REAL(EB), PARAMETER :: RHO_STEEL=7850._EB
 REAL(EB) :: RHO_PRT1=680._EB, RHO_PRT2=680._EB, RHO_PRT1_DRY=680._EB, RHO_PRT2_DRY=680._EB, &
 RHO_INT_PRT1=680._EB, RHO_INT_PRT2=680._EB
-REAL(EB) :: SHC_STEEL, SHC_STEEL_INT
+REAL(EB) :: SHC_STEEL
 REAL(EB) :: SHC_PRT1, SHC_PRT2, SHC_INT_PRT1, SHC_INT_PRT2
 
 ! PROPERTIES FOR CORRECTION TERMS
 REAL(EB) :: THM_EXP=0.005_EB, PR_NO=0.72_EB, C_SUL1=1.458E-6_EB, C_SUL2=110.4_EB,  VEL_MEAN, VISC_DYN, VISC_KIN, RE_NO,&
 GR_NO, RA_NO, NU_NO,CONV_CHK, R_INTU=1._EB, AX_UP,AX_LOW,AX_INT_UP,AX_INT_LOW, TMP_MOIST_INIT=373.15, TMP_MOIST_UP=413.15, &
-ZZ_GET(1:N_TRACKED_SPECIES), CHI_JUNC, Q_JUNC, HFG_MAX, HFG, Q_RAD_AX, Q_CONV_AX, Q_TOT_AX, DELT_I,&
-THM_PEN_DEPTH_UP,THM_PEN_DEPTH_LOW,CHI_AX,ST_UP1,ST_UP1_DENOM,ST_UP1_NUM,ST_UP2,ST_UP2_DENOM,ST_UP2_NUM,ST_LOW1,ST_LOW1_DENOM,&
-ST_LOW1_NUM,ST_LOW2,ST_LOW2_DENOM,ST_LOW2_NUM,LT_UP,LT_LOW
-
-INTEGER :: I_AX, I_AX_MAX
-! XC, YC, ZC available from mesh module with same labels
-
+ZZ_GET(1:N_TRACKED_SPECIES), CHI_JUNC, Q_JUNC
+! XC, YC, ZC available from MESH routine, so call from M%XC etc.
 REAL(EB) :: CHAR_L_STEEL = WD_FL ! relate characteristic length to given flange width
-REAL(EB) :: IPOS, JPOS, KPOS  ! express I,J,K as dimensions corresponding to end face coordinates
+
+REAL(EB) :: IPOS, JPOS, KPOS  ! try expressing IJK as relative to dimensions
 
 
 ! POINTERS
-CHARACTER(80) :: CSVDFMT  ! replicate style of setting CSV output from dump module
+CHARACTER(80) :: CSVDFMT  ! replicate style of setting CSV output from dump.f90
 M => MESHES(NM)  ! use M to point to mesh variables
-
 ! number of cells should be obtained from user input, so that all (gas-phase) cells covered
 NX => M%IBAR
 NY => M%JBAR
 NZ => M%KBAR
 
-! COMPARATIVE VALUES
+! COMPARATIVE VALUES SHOULD NOT BE DECLARED AS PART OF SPECIFICATION 
 THK_STEEL = MIN(THK_WEB,THK_FL) ! set as poorer case, until sophisticated enough to identify geometry
 DT_GS = TIME_STEP_INCREMENT*ANGLE_INCREMENT*DT ! use increments from radiation as a factor to adjust time-step size
 
@@ -1122,8 +1121,8 @@ ALLOCATE (PRT2_TMP(1:NX,1:NY,1:NZ))
 
 TMP_MBR0 = TMPA ! ambient surface temperature; unless known better, member starts at ambient temperature (Kelvin)
 
-
 ! initialises temperatures to ambient at first call (i.e. temperature is 0)
+
 DO K_GS=1,NZ
 DO J_GS=1,NY
 DO I_GS=1,NX
@@ -1147,20 +1146,22 @@ DO K_GS=1,NZ
 DO J_GS=1,NY
 DO I_GS=1,NX
 
-!  COMPLETE THE CALCULATION PROCESS IF THE CELL IS NOT PART OF A SOLID OBSTRUCTION
+!  COMPLETE THE CALCULATION PROCESS IF THE CELL IS NOT BLOCKED
 IF (.NOT. M%SOLID(M%CELL_INDEX(I_GS,J_GS,K_GS))) THEN
 
-! may not be necessary to find sum of radiant intensities, but it is left here as an option 
-RADSUM = M%UII(I_GS,J_GS,K_GS) ! 'sum of radiation' is sum of radiation intensities at point
+! due to different calculation methods, can obtain rad heat flux (as radiation source term) directly from 
+RADSUM = M%UII(I_GS,J_GS,K_GS) ! 'sum of radiation' is sum of radiation intensities at point; check 29/6 + 1/7 + 6/7 for notes
 
-! find specific heat dependent on temperature and mixture of species in gas (products)
+
 ZZ_GET(1:N_TRACKED_SPECIES) = M%ZZ(I_GS,J_GS,K_GS,1:N_TRACKED_SPECIES)
 CALL GET_SPECIFIC_HEAT(ZZ_GET,SHC_GAS, M%TMP(I_GS,J_GS,K_GS))
-! SHC_GAS = CP_GAMMA ! alternative value independent of temperature
+! SHC_GAS = CP_GAMMA ! hoping that this value can be extracted from READ_DATA by call
+
 
 ! SURFACE AREA, RADIANT HEAT FLUX, LOCAL TEMPERATURES
-A_S = 2*(M%DX(I_GS)*M%DZ(K_GS) +M%DY(J_GS) *M%DZ(K_GS) +M%DX(I_GS)*M%DY(J_GS)) ! allows for non-uniform meshing
-! do not appear to need cell surface area, since UII already in units of W/m2
+
+A_S = 2*(M%DX(I_GS)*M%DZ(K_GS) +M%DY(J_GS) *M%DZ(K_GS) +M%DX(I_GS)*M%DY(J_GS)) ! allows for grid stretching but no skew
+!**do not appear to need cell surface area, since UII already in units of W/m2
 
 ! surface area formulae using projections enclosed here
 ! A_S = 2*( SQRT(EPS_XP(I_GS,J_GS,K_GS)**2+(EPS_YP(I_GS,J_GS,K_GS)**2)+(EPS_ZP(I_GS,J_GS,K_GS)**2)) &
@@ -1170,24 +1171,26 @@ A_S = 2*(M%DX(I_GS)*M%DZ(K_GS) +M%DY(J_GS) *M%DZ(K_GS) +M%DX(I_GS)*M%DY(J_GS)) !
 IF (A_S > 0._EB) THEN
 Q_RAD = MAX(M%QR(I_GS,J_GS,K_GS), SIGMA*EMSV_FIRE*TMP_MBR0**4)
 ELSE
-Q_RAD = SIGMA*EMSV_FIRE*TMP_MBR0**4
+Q_RAD = SIGMA*EMSV_FIRE*TMP_MBR0**4 ! emissivity of fire tends to be equal to 1
 ENDIF
 
 Q_RAD1 = Q_RAD
 Q_RAD2 = Q_RAD ! defined separately so that different values possible
 
-! more convenient way to store temperature values for later use
+! more convenient than array value; no evidence that values diverge from equivalence
 TMP_STEEL = STEEL_TMP(I_GS, J_GS, K_GS)
 TMP_GAS1 = M%TMP(I_GS, J_GS, K_GS)
 TMP_GAS2 = M%TMP(I_GS, J_GS, K_GS)
-! more temperature definitions
+
+! MORE TEMPERATURE DEFINITIONS
 TMP_STEEL_MID = STEEL_TMP(I_GS, J_GS, K_GS)
 TMP_UPLIM = TMPM + 1550._EB ! approximately above typical melting point of steel (converts degC to K)
 
-! CONVECTIVE HEAT TRANSFER COEFFICIENT (consistent with Section 3.2.2 of GeniSTELA PhD)
+
+! CONVECTIVE HEAT TRANSFER COEFFICIENT (consistent with Section 3.2.2)
 VEL_MEAN = SQRT(M%U(I_GS,J_GS,K_GS)**2 + M%V(I_GS,J_GS,K_GS)**2 + M%W(I_GS,J_GS,K_GS)**2)
 
-IF (M%TMP(I_GS,J_GS,K_GS) .GE. 0) THEN  ! Sutherland's Law
+IF (M%TMP(I_GS,J_GS,K_GS) .GE. 0) THEN
 VISC_DYN = C_SUL1*M%TMP(I_GS,J_GS,K_GS)**1.5/(M%TMP(I_GS,J_GS,K_GS)+C_SUL2)
 ELSE
 VISC_DYN = 1E10_EB
@@ -1195,7 +1198,6 @@ ENDIF
 
 VISC_KIN = VISC_DYN/M%RHO(I_GS,J_GS,K_GS)
 
-! Reynolds Number 
 IF (M%RHO(I_GS,J_GS,K_GS) .GE. 0) THEN
 IF (VISC_DYN > 0) THEN 
 RE_NO = VEL_MEAN*CHAR_L_STEEL/VISC_KIN
@@ -1206,16 +1208,14 @@ ELSE
 RE_NO = 0
 ENDIF
 
-! Grashof Number
+
 IF (VISC_DYN > 0 .AND. M%RHO(I_GS,J_GS,K_GS)  > 0) THEN
 GR_NO = ABS((STEEL_TMP(I_GS,J_GS,K_GS)-M%TMP(I_GS,J_GS,K_GS))*GRAV*THM_EXP*CHAR_L_STEEL**3/(VISC_KIN**2))
 ELSE
 GR_NO = 0
 ENDIF
 
-! Rayleigh Number 
 RA_NO = GR_NO*PR_NO
-
 CONV_CHK = GR_NO/(RE_NO)**2
 
 ! at present, must explicitly state whether member is vertical or not (i.e. horizontal) and solid section or hollow
@@ -1224,7 +1224,7 @@ VERTICAL = .FALSE.
 SOLIDSECTION = .TRUE.
 ! SOLIDSECTION = .FALSE.
 
-! See Table 3.2 of GeniSTELA PhD for explanation of free/forced convection and laminar/turbulent flow for Nusselt Number 
+! See Table 3.2 for explanation of free/forced convection and laminar/turbulent flow
 IF (SOLIDSECTION) THEN
 
 IF (CONV_CHK > 1._EB) THEN ! free convection
@@ -1245,7 +1245,7 @@ ENDIF
 ENDIF
 ENDIF
 
-HTC_EFF = VISC_DYN*SHC_GAS*NU_NO/(CHAR_L_STEEL*PR_NO) ! use effective value for all instances of conv. h.t.c.
+HTC_EFF = VISC_DYN*SHC_GAS*NU_NO/(CHAR_L_STEEL*PR_NO) ! use effective conv. htc for all instances of conv. htc
 
 
 !//////////////////////// ///////// INTERMEDIATE TEMPERATURES (EULER STEP) ///////////////////////////////////////////////////////!
@@ -1264,10 +1264,10 @@ TMP_STEEL_OLD = TMP_STEEL ! use steel temperature from previous time-step
 TMP_INT_SURF(1,NR_ITER) = TMP_INT_SURF(1,NR_ITER-1) 
 TMP_INT_SURF(2,NR_ITER) = TMP_INT_SURF(2,NR_ITER-1)  ! update temperatures 
 
-IF (THK_PRT1 > 0._EB) THEN ! find weight factor given that protective layer exists (*switched order of if statements from original code)
+IF (THK_PRT1 > 0._EB) THEN ! find weight factor given that protective layer exists (*switched order of if statements from original)
 IF (R_INTU > 1.01_EB) THEN ! check if intumescent or moisture effects to be applied
 CALL INTUMESCE (SHC_INT_PRT1, K_INT_PRT1, RHO_INT_PRT1, RHO_PRT1_DRY, R_INTU, (TMP_INT_SURF(1,NR_ITER)+TMP_STEEL_OLD)/2)
-ELSE
+ELSE 
 CALL MOISTURE (K_INT_PRT1, SHC_INT_PRT1, (TMP_INT_SURF(1,NR_ITER)+TMP_STEEL_OLD)/2, TMP_MOIST_INIT, TMP_MOIST_UP)
 ENDIF
 
@@ -1295,7 +1295,7 @@ ENDIF
 RHO_INT_PRT2 = RHO_PRT2_DRY  ! set density to non-intumescing, non-moisture value
 
 IF (THK_PRT1 > 0._EB) THEN
-! find f(TMP), f'(TMP)
+! find f(T), f'(T)
 CALL BOUND_CONDN (F_TMP,TMP_INT_SURF(1,NR_ITER),HTC_EFF,TMP_GAS1,TMP_STEEL,Q_RAD1,EMSV_MBR1,SIGMA,K_INT_PRT1,THK_PRT1,WF_INT_PRT1)
 CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_INT_SURF(1,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR1,K_INT_PRT1,WF_INT_PRT1,THK_PRT1)
 DELTA_TMP = F_TMP / FPRIME_TMP
@@ -1307,7 +1307,7 @@ TMP_INT_SURF(1,NR_ITER) = TMP_STEEL
 ENDIF
 
 IF (THK_PRT2 > 0._EB) THEN
-! find f(TMP), f'(TMP)
+! find f(T), f'(T)
 CALL BOUND_CONDN (F_TMP,TMP_INT_SURF(2,NR_ITER),HTC_EFF,TMP_GAS2,TMP_STEEL,Q_RAD2,EMSV_MBR2,SIGMA,K_INT_PRT2,THK_PRT2,WF_INT_PRT2)
 CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_INT_SURF(2,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR2,K_INT_PRT2,WF_INT_PRT2,THK_PRT2) 
 DELTA_TMP = F_TMP / FPRIME_TMP
@@ -1318,9 +1318,9 @@ ELSE
 TMP_INT_SURF(2,NR_ITER) = TMP_STEEL
 ENDIF
 
-! stop iterating if temperature values within 0.1%
 IF ( ABS((TMP_INT_SURF(1,NR_ITER) - TMP_INT_SURF(1,NR_ITER-1))/TMP_INT_SURF(1,NR_ITER-1)) < NRTOL .AND. &
 ABS((TMP_INT_SURF(2,NR_ITER) - TMP_INT_SURF(2,NR_ITER-1))/TMP_INT_SURF(2,NR_ITER-1)) < NRTOL ) EXIT  NEWTON_RAPHSON 
+! stop iterating if within 0.1%
  
  
 ENDDO NEWTON_RAPHSON
@@ -1330,161 +1330,12 @@ ENDDO NEWTON_RAPHSON
 ! Most of the axial correction terms are unaltered between the intermediate and corrected steps.
 ! Hence, the majority of the calculations are completed at this stage, so that it can be applied at the intermediate 
 
-!* MANUALLY ACTIVATE (AXIAL) CORRECTION (until input file developed)
+!** WILL RETURN TO THIS SECTION ONCE GENERAL (UNCORRECTED) PROCEDURE SATISFACTORY
 CORRECTION = .FALSE.
 
-! Locate maximum heat flux gradient along axial direction
-HFG_MAX = 0._EB
-HFG = 0_EB
-
-DO I_AX = I_GS,NX
-
-Q_RAD_AX = MAX(M%QR(I_AX,J_GS,K_GS), SIGMA*EMSV_FIRE*TMP_MBR0**4)
-Q_CONV_AX = HTC_EFF*M%TMP(I_AX,J_GS,K_GS)
-Q_TOT_AX = MAX((EMSV_MBR1*Q_RAD_AX + Q_CONV_AX), (EMSV_MBR2*Q_RAD_AX + Q_CONV_AX))
-
-DELT_I = ABS(M%XC(I_AX) - M%XC(I_GS))
-
-HFG = Q_TOT_AX / DELT_I
-
-IF (.NOT. M%SOLID(M%CELL_INDEX(I_AX,J_GS,K_GS))) THEN
-IF (HFG > HFG_MAX) THEN
-HFG_MAX = HFG
-I_AX_MAX = I_AX
-END IF
-END IF
-
-END DO
-
-! Upper value of inverted radiation temperature, thermal penetration depth, gas temperature
-TMP_INVRAD_U = MAX(TMPA,(M%QR(I_AX_MAX,J_GS,K_GS)/(SIGMA*EMSV_FIRE))**0.25)
-THM_PEN_DEPTH_UP = ABS(M%XC(I_AX_MAX) - M%XC(I_GS))
-TMP_GAS_UP = M%TMP(I_AX_MAX,J_GS,K_GS)
-
-! Find gradient at current location
-DO I_AX = I_GS,1,-1
-
-Q_RAD_AX = MAX(M%QR(I_AX,J_GS,K_GS), SIGMA*EMSV_FIRE*TMP_MBR0**4)
-Q_CONV_AX = HTC_EFF*M%TMP(I_AX,J_GS,K_GS)
-Q_TOT_AX = MAX((EMSV_MBR1*Q_RAD_AX + Q_CONV_AX), (EMSV_MBR2*Q_RAD_AX + Q_CONV_AX))
-
-DELT_I = ABS(M%XC(I_AX) - M%XC(I_GS))
-
-HFG = Q_TOT_AX / DELT_I
-
-IF (.NOT. M%SOLID(M%CELL_INDEX(I_AX,J_GS,K_GS))) THEN
-IF (HFG > HFG_MAX) THEN
-HFG_MAX = HFG
-I_AX_MAX = I_AX
-END IF
-END IF
-
-END DO
-
-! Lower value of inverted radiation temperature, thermal penetration depth, gas temperature
-TMP_INVRAD_L = MAX(TMPA,(M%QR(I_AX_MAX,J_GS,K_GS)/(SIGMA*EMSV_FIRE))**0.25)
-THM_PEN_DEPTH_LOW = ABS(M%XC(I_AX_MAX) - M%XC(I_GS))
-TMP_GAS_LOW = M%TMP(I_AX_MAX,J_GS,K_GS)
-
-! Find axial length scale parameter and set whether it has long-term or short-term effects
-AXIAL_LT = .FALSE.
-
-CHI_AX = 0._EB
-TMP_INVRAD = MAX(TMPA,(M%QR(I_GS,J_GS,K_GS)/(SIGMA*EMSV_FIRE))**0.25)
-
-IF (TMP_INVRAD > TMPA) THEN
-CHI_AX = (TMP_STEEL_MID - TMP_MBR0) / (TMP_INVRAD-TMPA)
-END IF
-
-IF (CHI_AX > 0.5) THEN
-AXIAL_LT = .TRUE.
-END IF
-
-! SHORT-TERM CORRECTION PRE-CALCULATION
-IF (CHI_AX > 0.01 .AND. CHI_AX .LE. 0.5) THEN
-! Upper cell correction
-ST_UP1_NUM = HTC_EFF*(TMP_GAS_UP - TMPA) + EMSV_UPP*SIGMA*TMP_INVRAD_U**4 - EMSV_MBR1*SIGMA*TMPA**4
-ST_UP1_DENOM = HTC_EFF*(TMP_GAS1 - TMPA) + EMSV_MBR1*SIGMA*TMP_INVRAD**4 - EMSV_MBR1*SIGMA*TMPA**4
-
-IF (ST_UP1_DENOM .LE. 0.001_EB .AND. ST_UP1_NUM .NE. 0) THEN
-ST_UP1 = 0._EB
-ELSE
-ST_UP1 = ST_UP1_NUM/ST_UP1_DENOM - 1._EB
-END IF
-
-ST_UP2_NUM = HTC_EFF*(TMP_GAS_UP - TMPA) + EMSV_UPP*SIGMA*TMP_INVRAD_U**4 - EMSV_MBR2*SIGMA*TMPA**4
-ST_UP2_DENOM = HTC_EFF*(TMP_GAS2 - TMPA) + EMSV_MBR2*SIGMA*TMP_INVRAD**4 - EMSV_MBR2*SIGMA*TMPA**4
-
-IF (ST_UP2_DENOM .LE. 0.001_EB .AND. ST_UP2_NUM .NE. 0) THEN
-ST_UP2 = 0._EB
-ELSE
-ST_UP2 = ST_UP2_NUM/ST_UP2_DENOM - 1._EB
-END IF
-
-! Lower cell correction
-ST_LOW1_NUM = HTC_EFF*(TMP_GAS_LOW - TMPA) + EMSV_LOW*SIGMA*TMP_INVRAD_U**4 - EMSV_MBR1*SIGMA*TMPA**4
-ST_LOW1_DENOM = HTC_EFF*(TMP_GAS1 - TMPA) + EMSV_MBR1*SIGMA*TMP_INVRAD**4 - EMSV_MBR1*SIGMA*TMPA**4
-
-IF (ST_LOW1_DENOM .LE. 0.001_EB .AND. ST_LOW1_NUM .NE. 0) THEN
-ST_LOW1 = 0._EB
-ELSE
-ST_LOW1 = -ST_LOW1_NUM/ST_LOW1_DENOM + 1._EB
-END IF
-
-ST_LOW2_NUM = HTC_EFF*(TMP_GAS_LOW - TMPA) + EMSV_LOW*SIGMA*TMP_INVRAD_U**4 - EMSV_MBR2*SIGMA*TMPA**4
-ST_LOW2_DENOM = HTC_EFF*(TMP_GAS2 - TMPA) + EMSV_MBR2*SIGMA*TMP_INVRAD**4 - EMSV_MBR2*SIGMA*TMPA**4
-
-IF (ST_LOW2_DENOM .LE. 0.001_EB .AND. ST_LOW2_NUM .NE. 0) THEN
-ST_LOW2 = 0._EB
-ELSE
-ST_LOW2 = -ST_LOW2_NUM/ST_LOW2_DENOM + 1._EB
-END IF
-
-! LONG TERM CORRECTION PRE-CALCULATION
-ELSE IF (CHI_AX > 0.5) THEN
-LT_UP = TMP_INVRAD_U/TMP_INVRAD - 1._EB
-LT_LOW = 1._EB - TMP_INVRAD_L/TMP_INVRAD
-
-END IF
-
-! INTERMEDIATE AXIAL CORRECTION VALUES
-IF (CHI_AX > 0.01 .AND. CHI_AX .LE. 0.5) THEN
-
-! Short term, upper cell
-IF (THM_PEN_DEPTH_UP > 0_EB) THEN
-AX_INT_UP = K_STEEL/THM_PEN_DEPTH_UP * (TMP_STEEL_MID - TMP_MBR0) * 0.5*(ST_UP1 + ST_UP2)
-ELSE
-AX_INT_UP = 0._EB
-ENDIF
-
-! Short term, lower cell
-IF (THM_PEN_DEPTH_LOW > 0_EB) THEN
-AX_INT_LOW = K_STEEL/THM_PEN_DEPTH_LOW * (TMP_STEEL_MID - TMP_MBR0) * 0.5*(ST_LOW1 + ST_LOW2)
-ELSE
-AX_INT_LOW = 0._EB
-ENDIF
-
-ELSE IF (CHI_AX > 0.5) THEN
-
-! Long term, upper cell
-IF (THM_PEN_DEPTH_UP > 0_EB) THEN
-AX_INT_UP = K_STEEL/THM_PEN_DEPTH_UP * TMP_STEEL_MID * LT_UP
-ELSE
-AX_INT_UP = 0._EB
-ENDIF
-
-! Long term, lower cell
-IF (THM_PEN_DEPTH_LOW > 0_EB) THEN
-AX_INT_LOW = K_STEEL/THM_PEN_DEPTH_LOW * TMP_STEEL_MID * LT_LOW
-ELSE
-AX_INT_LOW = 0._EB
-ENDIF
-
-ELSE
+! Set axial correction terms to zero at 'margin' boundary cells (may not be used in FDS)
 AX_INT_UP = 0._EB
 AX_INT_LOW = 0._EB
-END IF
-
 
 !------------------------------FIRST RUNGE-KUTTA COEFFICIENT (K1) AND INTERMEDIATE TEMPERATURES-----------------------------------!
 ! Break the components of K1 into manageable parts to avoid transcription errors
@@ -1494,7 +1345,6 @@ DTMP_LIM = -1000 ! temperature difference between time-steps needs stability lim
 
 ! Find temperature-dependent value of SHC (i.e. c_p_steel)
 CALL CPSTEEL(SHC_STEEL, TMP_STEEL)
-SHC_STEEL_INT = SHC_STEEL  ! save this intermediate value for display, without disturbing the rest of the code
 
 ! Corrections for denominator using protection properties
 IF (WF_INT_PRT1 < 1._EB) THEN 
@@ -1511,10 +1361,10 @@ ENDIF
 
 RK_1ST_DENOM = THK_STEEL*RHO_STEEL*SHC_STEEL + RK_1ST_DENOM1 + RK_1ST_DENOM2
 
-! net heat transfer terms for protection 1+2
 CALL NET_RK (RK_1ST_NET1,HTC_EFF,TMP_GAS1,TMP_INT_SURF(1,IRNK),Q_RAD1,EMSV_MBR1,SIGMA)
 CALL NET_RK (RK_1ST_NET2,HTC_EFF,TMP_GAS2,TMP_INT_SURF(2,IRNK),Q_RAD2,EMSV_MBR2,SIGMA)
-RK_1ST_NET = (RK_1ST_NET1+RK_1ST_NET2)/ RK_1ST_DENOM  
+
+RK_1ST_NET = (RK_1ST_NET1+RK_1ST_NET2)/ RK_1ST_DENOM  ! net heat transfer terms for protection 1+2
 
 IF ((THK_PRT1 + THK_PRT2) > 0) THEN  ! transient terms only apply if there is a protective layer
 CALL TRANS_RK (RK_1ST_TRNS1, TMP_INT_SURF(1,IRNK),PRT1_TMP(I_GS,J_GS,K_GS),THK_PRT1,WF_INT_PRT1,RHO_INT_PRT1,SHC_INT_PRT1,DT_GS,DTMP_LIM)
@@ -1526,6 +1376,7 @@ RK_1ST_TRNS = 0._EB
 ENDIF
 
 RK_1STF = RK_1ST_NET + MIN(MAX(RK_1ST_TRNS, -RK_1ST_NET), RK_1ST_NET)
+
 
 ! Find ratio of axial correction to uncorrected function; if correction is too big, do not include to avoid divergence 
 PER_TMP_AX = ABS((AX_INT_UP - AX_INT_LOW)/RK_1ST_DENOM) / RK_1STF
@@ -1593,7 +1444,7 @@ RHO_PRT2 = RHO_PRT2_DRY  ! set density to non-intumescing, non-moisture value
 
 IF (THK_PRT1 > 0._EB) THEN
 CALL BOUND_CONDN (F_TMP,TMP_SURF(1,NR_ITER),HTC_EFF,TMP_GAS1,TMP_STEEL,Q_RAD1,EMSV_MBR1,SIGMA,K_PRT1,THK_PRT1,WF_PRT1)
-CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_SURF(1,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR1,K_PRT1,WF_PRT1,THK_PRT1) ! find f(TMP), f'(TMP)
+CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_SURF(1,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR1,K_PRT1,WF_PRT1,THK_PRT1) ! find f(T), f'(T)
 DELTA_TMP = F_TMP / FPRIME_TMP
 TMP_SURF1= TMP_SURF(1,NR_ITER) - DELTA_TMP
 TMP_SURF(1,NR_ITER) = MIN(TMP_UPLIM, MAX(TMP_SURF1,TMP_MBR0))
@@ -1604,7 +1455,7 @@ ENDIF
 
 IF (THK_PRT2 > 0._EB) THEN
 CALL BOUND_CONDN (F_TMP,TMP_SURF(2,NR_ITER),HTC_EFF,TMP_GAS2,TMP_STEEL,Q_RAD2,EMSV_MBR2,SIGMA,K_PRT2,THK_PRT2,WF_PRT2)
-CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_SURF(2,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR2,K_PRT2,WF_PRT2,THK_PRT2) ! find f(TMP), f'(TMP)
+CALL BOUND_CONDN_PRIME (FPRIME_TMP,TMP_SURF(2,NR_ITER),HTC_EFF,SIGMA,EMSV_MBR2,K_PRT2,WF_PRT2,THK_PRT2) ! find f(T), f'(T)
 DELTA_TMP = F_TMP / FPRIME_TMP
 TMP_SURF2= TMP_SURF(2,NR_ITER) - DELTA_TMP
 TMP_SURF(2,NR_ITER) = MIN(TMP_UPLIM, MAX(TMP_SURF2,TMP_MBR0))
@@ -1613,60 +1464,20 @@ ELSE
 TMP_SURF(2,NR_ITER) = TMP_STEEL
 ENDIF
 
-! stop iterating if within 0.1%
 IF ( ABS((TMP_SURF(1,NR_ITER)-TMP_SURF(1,NR_ITER-1))/TMP_SURF(1,NR_ITER-1)) < NRTOL  .AND. &
 ABS((TMP_SURF(2,NR_ITER)-TMP_SURF(2,NR_ITER-1))/TMP_SURF(2,NR_ITER-1))< NRTOL ) EXIT NEWTON_RAPHSON_FIN  
+! stop iterating if within 0.1%
  
  
 ENDDO NEWTON_RAPHSON_FIN
 
 
 !------------------------------------------AXIAL CORRECTION-----------------------------------------------------------------------!
-!*MOST OF THE CORRECTION TERMS ARE THE SAME VALUE AS AT INTERMEDIATE STAGE
+!**COPY RELEVANT PROCEDURES FROM ABOVE; MOST OF THE CORRECTION TERMS ARE THE SAME VALUE
 
-! Re-calculate axial length scale parameter
-IF (TMP_INVRAD > TMPA) THEN
-CHI_AX = (TMP_STEEL_AX - TMP_MBR0)/(TMP_INVRAD - TMPA)
-ELSE
-CHI_AX = 0._EB
-END IF
-
-! AXIAL CORRECTION VALUES
-IF(THM_PEN_DEPTH_UP > 0 .AND. THM_PEN_DEPTH_LOW > 0) THEN
-IF (.NOT. AXIAL_LT) THEN
-
-IF (CHI_AX > 0.01 .AND. CHI_AX .LE. 0.5) THEN
-AXIAL_LT = .FALSE.
-
-! Short term, upper cell
-AX_UP = K_STEEL/THM_PEN_DEPTH_UP * (TMP_STEEL_AX - TMP_MBR0) * 0.5*(ST_UP1 + ST_UP2)
-
-! Short term, lower cell
-AX_INT_LOW = K_STEEL/THM_PEN_DEPTH_LOW * (TMP_STEEL_AX - TMP_MBR0) * 0.5*(ST_LOW1 + ST_LOW2)
-
-
-ELSE IF (CHI_AX > 0.5) THEN
-AXIAL_LT = .TRUE.
-
-! Long term, upper cell
-AX_UP = K_STEEL/THM_PEN_DEPTH_UP * TMP_STEEL_AX * LT_UP
-
-! Long term, lower cell
-AX_LOW = K_STEEL/THM_PEN_DEPTH_LOW * TMP_STEEL_AX * LT_LOW
-
-ELSE
+! Recalculated at this stage, due to changes in temperature variables
 AX_UP = 0._EB
 AX_LOW = 0._EB
-END IF
-
-! for long-term correction only 
-ELSE
-AX_UP = K_STEEL/THM_PEN_DEPTH_UP * TMP_STEEL_AX * LT_UP
-AX_LOW = K_STEEL/THM_PEN_DEPTH_LOW * TMP_STEEL_AX * LT_LOW
-END IF
-
-END IF
-
 
 !----------------------------------------SECOND RUNGE-KUTTA COEFFICIENT (K2)---------------------------------------------!
 ! Break the components of K2 into manageable parts to avoid transcription errors
@@ -1675,7 +1486,7 @@ END IF
 ! Find temperature-dependent value of SHC (i.e. c_p_steel) 
 CALL CPSTEEL(SHC_STEEL, TMP_STEEL)
 
-! Corrections for denominator using protection properties
+! Corrections for denominator if unstable(?)
 IF (WF_PRT1 < 1._EB) THEN 
 RK_2ND_DENOM1 = 0.5_EB*WF_PRT1*THK_PRT1*RHO_PRT1*SHC_PRT1
 ELSE
@@ -1690,10 +1501,10 @@ ENDIF
 
 RK_2ND_DENOM = THK_STEEL*RHO_STEEL*SHC_STEEL + RK_2ND_DENOM1 + RK_2ND_DENOM2
 
-! net heat transfer terms for protection 1+2
 CALL NET_RK (RK_2ND_NET1,HTC_EFF,TMP_GAS1,TMP_SURF(1,IRNK),Q_RAD1,EMSV_MBR1,SIGMA)
 CALL NET_RK (RK_2ND_NET2,HTC_EFF,TMP_GAS2,TMP_SURF(2,IRNK),Q_RAD2,EMSV_MBR2,SIGMA)
-RK_2ND_NET = (RK_2ND_NET1 + RK_2ND_NET2) / RK_2ND_DENOM  
+
+RK_2ND_NET = (RK_2ND_NET1 + RK_2ND_NET2) / RK_2ND_DENOM  ! net heat transfer terms for protection 1+2
 
 IF ((THK_PRT1 + THK_PRT2) > 0) THEN  ! transient terms only apply if there is a protective layer
 CALL TRANS_RK (RK_2ND_TRNS1,TMP_SURF(1,IRNK),PRT1_TMP(I_GS,J_GS,K_GS),THK_PRT1,WF_PRT1,RHO_PRT1,SHC_PRT1,DT_GS,DTMP_LIM)
@@ -1721,11 +1532,10 @@ TMP_STEEL = MIN (TMP_UPLIM, MAX(STEEL_TMP(I_GS,J_GS,K_GS)+(RK_1ST+RK_2ND)/2._EB,
 
 IF (CORRECTION) TMP_STEEL_AX = MIN (TMP_UPLIM, MAX(STEEL_TMP(I_GS,J_GS,K_GS)+(RK_1ST_AX+RK_2ND_AX)/2._EB, TMP_MBR0))
 
-
 !---------------------------------------CORRECTIONS FOR END EFFECT AND JUNCTION EFFECT--------------------------------------------!
-
+!** WILL RETURN TO THIS SECTION ONCE GENERAL (UNCORRECTED) PROCEDURE SATISFACTORY
 ! NOTE: Original code activates all the correction terms or none, because the axial gradient corrections are used
-! Investigate- is it suitable to use individual switches for each correction effect?
+! In future, would like the correction switches to be separate without disturbing the code....
 
 CORREND = .FALSE.
 CORRJUNC = .FALSE.
@@ -1794,39 +1604,40 @@ ENDIF
 !-------------------------------------------------OUTPUT RESULTS TO FILE----------------------------------------------------------!
 
 ! IJK must be expressed as REAL variables for output to read values correctly
-! convert cell number to end face coordinate (in m) using cell size and offset by coordinate of first point
+! convert cell number to coordinate (in m) using cell size and offset by coordinate of first point
 IPOS = REAL(I_GS)*M%DX(I_GS) + M%XS
 JPOS = REAL(J_GS)*M%DY(J_GS) + M%YS
 KPOS = REAL(K_GS)*M%DZ(K_GS) + M%ZS
 
 SIMTIME = REAL(T_BEGIN+(T-T_BEGIN)*TIME_SHRINK_FACTOR,FB)
 
-! MANUALLY INSERT CELL RANGE FOR TEMPERATURE ACROSS POSITIONS
-! This example is for a section covering 0.5m along starting from centre, full width and height of beam
+! Try and find out what is happening along the plume....
 IF (IPOS .GE. (1.475-M%DX(I_GS)) .AND. IPOS .LE. (1.975+M%DX(I_GS))) THEN
 IF (JPOS .GE. (0.79-M%DY(J_GS)) .AND. JPOS .LE. (1.04+M%DY(J_GS))) THEN
 IF (KPOS .GE. (1.0+M%DZ(K_GS)) .AND. KPOS .LE. (1.275+M%DZ(K_GS))) THEN
+WRITE(CSVDFMT,'(A,I5.1,5A)') "(",11,"(",FMT_R,",','),",FMT_R,")" ! use this to set style for lines to follow - is there a better way?
+WRITE(LU_GSTA(NM),CSVDFMT) IPOS,JPOS,KPOS,STEEL_TMP(I_GS,J_GS,K_GS),PRT1_TMP(I_GS,J_GS,K_GS),PRT2_TMP(I_GS,J_GS,K_GS),SIMTIME,&
+SHC_GAS,HTC_EFF,VISC_DYN,NU_NO
+! ,VEL_MEAN,VISC_DYN,VISC_KIN,RE_NO,GR_NO,NU_NO
 
-WRITE(CSVDFMT,'(A,I5.1,5A)') "(",7,"(",FMT_R,",','),",FMT_R,")" ! use this to set style for lines to follow
-WRITE(LU_GSTA(NM),CSVDFMT) IPOS,JPOS,KPOS,STEEL_TMP(I_GS,J_GS,K_GS),PRT1_TMP(I_GS,J_GS,K_GS),PRT2_TMP(I_GS,J_GS,K_GS),SIMTIME
+! CONSIDER INCLUDING FOR DIAGNOSTICS: DT, DT_GS, Q_RAD, HTC_EFF; TMP_INT_SURF, TMP_STEEL(x2), TMP_SURF, NR_ITER(x2)
+! ALSO: MASSRATE, FAC_EXP_T, K_PROT, RHO_PROT, CP_PROT, CP_STEEL
 
 ENDIF
 ENDIF
 ENDIF
 
-! MANUALLY INSERT CELL RANGE FOR TIME HISTORY
-! This example is for the single point (2.05, 1.04, 1.075) that lies on the beam 'surface'
+
 IF ((IPOS-2.05) .GE. 0 .AND.  (IPOS-2.05) < M%DX(I_GS)) THEN
 IF ((JPOS-1.04) .GE. 0 .AND. (JPOS-1.04) < M%DY(J_GS)) THEN
 IF ((KPOS-1.075) .GE. 0 .AND. (KPOS-1.075) < M%DZ(K_GS)) THEN
 
-WRITE(CSVDFMT,'(A,I5.1,5A)') "(",46,"(",FMT_R,",','),",FMT_R,")"
-WRITE(LU_GSTH(NM),CSVDFMT) SIMTIME,DT_GS,STEEL_TMP(I_GS,J_GS,K_GS),PRT1_TMP(I_GS,J_GS,K_GS),PRT2_TMP(I_GS,J_GS,K_GS),&
-IPOS,JPOS,KPOS,M%TMP(I_GS,J_GS,K_GS),M%U(I_GS,J_GS,K_GS),M%V(I_GS,J_GS,K_GS),M%W(I_GS,J_GS,K_GS),M%RHO(I_GS,J_GS,K_GS),SHC_GAS,&
-RADSUM,Q_RAD,VEL_MEAN,VISC_DYN,RE_NO,GR_NO,NU_NO,HTC_EFF,SIZE(TMP_INT_SURF,2),K_INT_PRT1,SHC_INT_PRT1,RHO_INT_PRT1,WF_INT_PRT1,&
-TMP_SURF(1,0),SHC_STEEL_INT,RK_1ST_DENOM,RK_1ST_NET,RK_1ST_TRNS,RK_1STF,RK_1ST,SIZE(TMP_SURF,2),K_PRT1,SHC_PRT1,RHO_PRT1,WF_PRT1,&
-TMP_SURF(1,IRNK),SHC_STEEL,RK_2ND_DENOM,RK_2ND_NET,RK_2ND_TRNS,RK_2NDF,RK_2ND
+! IF (ABS(IPOS - 2.05) < (2*M%DX(I_GS))) THEN
+! IF (ABS(JPOS - 0.9125) < (2*M%DY(J_GS))) THEN
+! IF (ABS(KPOS - 1.075) < (2*M%DZ(K_GS))) THEN
 
+WRITE(CSVDFMT,'(A,I5.1,5A)') "(",8,"(",FMT_R,",','),",FMT_R,")"
+WRITE(LU_GSTH(NM),CSVDFMT) SIMTIME,DT_GS,STEEL_TMP(I_GS,J_GS,K_GS),PRT1_TMP(I_GS,J_GS,K_GS),PRT2_TMP(I_GS,J_GS,K_GS),IPOS,JPOS,KPOS
 
 ENDIF
 ENDIF
@@ -1841,6 +1652,7 @@ DEALLOCATE (STEEL_TMP)
 DEALLOCATE (PRT1_TMP)
 DEALLOCATE (PRT2_TMP)
 
+! RETURN to main program implied by ending subroutine?
 RETURN
 END SUBROUTINE GENISTELA
 
@@ -1889,7 +1701,7 @@ ELSE
 FAC_EXP_T = FAC_EXP
  ENDIF
  
- !  TEMPERATURE-VARYING AND EFFECTIVE THERMAL CONDUCTIVITY
+ !  TEMPERATURE-VARYING AND EFFECTIVE THERMAL CONDUCTIVITY (ARE TMP IN K OR DEGC, AS EQUATIONS ARE K?)
  K_FAC = K_DRY + KTMP*TMP_PROT
  K_PROT = K_FAC * (KPOLY2*TMP_PROT**2*KPOLY1*TMP_PROT+KPOLY0)
  K_PROT = K_PROT*FAC_EXP_T
@@ -1935,7 +1747,7 @@ K_FAC = 1._EB
 K_PWR = 1._EB
 
 ! IF (MOIST .NE. 0) MOIST_FLAG = .TRUE.  ! moisture effects not applicable if moisture not transferred
-MOIST_FLAG = .FALSE.  ! flag for moisture effect on thermal conductivity is manually set (SensVari input file in original code)
+MOIST_FLAG = .FALSE.  ! flag for moisture effect on thermal conductivity is manually set (or called from SensVari)
 
 ! SPECIFIC HEAT CAPACITY
 IF (TMP_PROT .GE. TMP_UP) THEN
@@ -2037,6 +1849,7 @@ CP_STEEL = 425._EB
 ENDIF
 
 END SUBROUTINE CPSTEEL
+
 
 
 !//////////////////////////////////////////////////////////////////////////////////////////////////////
